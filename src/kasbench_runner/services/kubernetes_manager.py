@@ -174,18 +174,44 @@ class KubernetesManager:
         logger.info("kubeadm_init_completed", hostname=hostname)
 
     async def _copy_kubeconfig(self, hostname: str) -> None:
-        """SCP kubeconfig from control plane to local $HOME/.kube/config.
+        """Set up kubeconfig on control plane, then SCP it to local $HOME/.kube/config.
+
+        After kubeadm init, the admin kubeconfig lives at /etc/kubernetes/admin.conf.
+        This method first sets up the standard ~/.kube/config on the remote node,
+        then copies it locally.
 
         Args:
             hostname: Control plane hostname.
 
         Raises:
-            KubernetesError: If the SCP operation fails.
+            KubernetesError: If the remote setup or SCP operation fails.
         """
         local_kube_dir = os.path.join(os.environ.get("HOME", "/root"), ".kube")
         local_path = os.path.join(local_kube_dir, "config")
         remote_path = "/home/ubuntu/.kube/config"
 
+        # Set up kubeconfig on the remote control plane node
+        setup_command = (
+            "mkdir -p /home/ubuntu/.kube"
+            " && sudo cp /etc/kubernetes/admin.conf /home/ubuntu/.kube/config"
+            " && sudo chown ubuntu:ubuntu /home/ubuntu/.kube/config"
+        )
+        try:
+            await self._ssh.connect(hostname)
+            await self._ssh.execute(setup_command)
+            await self._ssh.close()
+        except SSHError as exc:
+            await self._ssh.close()
+            raise KubernetesError(
+                step="copy_kubeconfig",
+                node=hostname,
+                command=setup_command,
+                error_output=exc.context.get("stderr", str(exc)),
+            ) from exc
+
+        logger.info("remote_kubeconfig_setup", hostname=hostname)
+
+        # SCP the kubeconfig to local
         try:
             await self._ssh.connect(hostname)
             await self._ssh.copy_from_remote(remote_path, local_path)
@@ -210,7 +236,7 @@ class KubernetesManager:
         Raises:
             KubernetesError: If flannel installation fails.
         """
-        command = "/home/ubuntu/flannel-install.sh"
+        command = "bash /home/ubuntu/flannel-install.sh"
         try:
             await self._ssh.connect(hostname)
             await self._ssh.execute(command)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class InitializeRequest(BaseModel):
@@ -12,9 +12,15 @@ class InitializeRequest(BaseModel):
     autoscaler: str = Field(..., min_length=1)
     control_plane_node: str = Field(..., alias="controlPlaneNode", min_length=1)
     amd_worker_nodes: list[str] = Field(..., alias="amdWorkerNodes", min_length=1)
-    arm_worker_nodes: list[str] = Field(..., alias="armWorkerNodes", min_length=1)
+    arm_worker_nodes: list[str] = Field(default_factory=list, alias="armWorkerNodes")
     s3_bucket: str = Field(..., alias="s3Bucket", min_length=1)
     globeco_url: str = Field(..., alias="globecoUrl", min_length=1)
+
+    @field_validator("amd_worker_nodes", "arm_worker_nodes", mode="after")
+    @classmethod
+    def filter_empty_hostnames(cls, v: list[str]) -> list[str]:
+        """Remove empty strings from worker node lists."""
+        return [hostname for hostname in v if hostname.strip()]
 
     # Optional with defaults
     run_identifier: str = Field(default="run001", alias="runIdentifier")
