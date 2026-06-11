@@ -348,7 +348,7 @@ class KubernetesManager:
 
             # Get current node statuses via kr8s
             api = await kr8s.asyncio.api()
-            nodes = await api.get("nodes")
+            nodes = [node async for node in api.get("nodes")]
 
             ready_count = 0
             current_unready: dict[str, str] = {}
@@ -411,7 +411,7 @@ class KubernetesManager:
         unready: dict[str, str] = {}
         try:
             api = await kr8s.asyncio.api()
-            nodes = await api.get("nodes")
+            nodes = [node async for node in api.get("nodes")]
             for node in nodes:
                 conditions = node.status.get("conditions", [])
                 for condition in conditions:
