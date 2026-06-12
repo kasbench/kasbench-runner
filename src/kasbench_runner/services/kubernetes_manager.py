@@ -472,6 +472,41 @@ class KubernetesManager:
         Raises:
             KubernetesError: If Helm install or StorageClass creation fails.
         """
+        # Add Helm repo and update
+        repo_add_command = (
+            "helm repo add aws-ebs-csi-driver"
+            " https://kubernetes-sigs.github.io/aws-ebs-csi-driver"
+            " && helm repo update"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                repo_add_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="helm_install_ebs_csi",
+                    node=None,
+                    command=repo_add_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("helm_repo_added", repo="aws-ebs-csi-driver")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="helm_install_ebs_csi",
+                node=None,
+                command=repo_add_command,
+                error_output=str(exc),
+            ) from exc
+
         # Install EBS CSI driver via Helm
         helm_command = (
             "helm upgrade --install aws-ebs-csi-driver"
