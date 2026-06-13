@@ -186,7 +186,7 @@ class KubernetesManager:
         Raises:
             KubernetesError: If the remote setup or SCP operation fails.
         """
-        local_kube_dir = os.path.join(os.environ.get("HOME", "/root"), ".kube")
+        local_kube_dir = os.path.join(os.environ.get("HOME", "/home/ubuntu"), ".kube")
         local_path = os.path.join(local_kube_dir, "config")
         remote_path = "/home/ubuntu/.kube/config"
 

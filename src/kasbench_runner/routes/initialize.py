@@ -123,12 +123,13 @@ async def initialize(body: InitializeRequest, request: Request) -> JSONResponse:
             )
 
     # Step 4: Manifest install (Req 5.1–5.13)
+    manifest_errors: list[dict[str, str]] = []
     if body.skip_manifest_install:
         logger.info("manifest_install_skipped")
         state.globeco_installed = True
     else:
         try:
-            await _install_manifests(body, config)
+            manifest_errors = await _install_manifests(body, config)
             state.globeco_installed = True
         except ManifestError as exc:
             return build_error_response(
@@ -186,21 +187,34 @@ async def initialize(body: InitializeRequest, request: Request) -> JSONResponse:
         load_generators_installed=state.load_generators_installed,
     )
 
+    response_content: dict = {
+        "message": "Initialization complete",
+        "status": "not-started",
+    }
+
+    if manifest_errors:
+        response_content["manifest_errors"] = manifest_errors
+
     return JSONResponse(
         status_code=200,
-        content={"message": "Initialization complete", "status": "not-started"},
+        content=response_content,
     )
 
 
-async def _install_manifests(body: InitializeRequest, config: RunnerConfig) -> None:
+async def _install_manifests(body: InitializeRequest, config: RunnerConfig) -> list[dict[str, str]]:
     """Fetch and execute manifest operations from all configured repos.
 
     Iterates MANIFEST_REPOS, fetches k8s.lst from each, parses operations,
     and executes them in sequence.
 
+    Returns:
+        A list of error dicts accumulated during forced execution (empty if no errors).
+
     Raises:
         ManifestError: If any manifest operation fails and forceManifestInstall is False.
     """
+    all_errors: list[dict[str, str]] = []
+
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(config.manifest_fetch_timeout)
     ) as http_client:
@@ -241,15 +255,17 @@ async def _install_manifests(body: InitializeRequest, config: RunnerConfig) -> N
             )
 
             # Execute operations
-            await _execute_manifest_operations(
+            errors = await _execute_manifest_operations(
                 operations=operations,
                 owner=owner,
                 repo=repo,
                 tag=tag,
                 force=body.force_manifest_install,
             )
+            all_errors.extend(errors)
 
-    logger.info("all_manifests_installed")
+    logger.info("all_manifests_installed", error_count=len(all_errors))
+    return all_errors
 
 
 async def _execute_manifest_operations(
@@ -258,7 +274,7 @@ async def _execute_manifest_operations(
     repo: str,
     tag: str,
     force: bool,
-) -> None:
+) -> list[dict[str, str]]:
     """Execute a list of parsed manifest operations.
 
     Args:
@@ -268,9 +284,14 @@ async def _execute_manifest_operations(
         tag: Git tag/branch.
         force: If True, continue on errors; if False, raise on first error.
 
+    Returns:
+        A list of error dicts accumulated during forced execution (empty if no errors).
+
     Raises:
         ManifestError: If an operation fails and force is False.
     """
+    errors: list[dict[str, str]] = []
+
     for op in operations:
         if op.op_type in ("noop", "comment"):
             continue
@@ -301,6 +322,12 @@ async def _execute_manifest_operations(
                         command=command,
                         stderr=error_output,
                     )
+                errors.append({
+                    "repo": repo,
+                    "type": "command",
+                    "command": command,
+                    "error": error_output,
+                })
             else:
                 logger.info(
                     "manifest_command_success",
@@ -320,7 +347,7 @@ async def _execute_manifest_operations(
                 f"https://raw.githubusercontent.com/{owner}/{repo}/{tag}"
                 f"/k8s_aws/{filename}"
             )
-            command = f"kubectl apply -f {manifest_url}"
+            command = f"kubectl apply --validate=false -f {manifest_url}"
 
             logger.info(
                 "manifest_apply",
@@ -351,12 +378,21 @@ async def _execute_manifest_operations(
                         command=command,
                         stderr=error_output,
                     )
+                errors.append({
+                    "repo": repo,
+                    "type": "manifest_apply",
+                    "command": command,
+                    "filename": filename,
+                    "error": error_output,
+                })
             else:
                 logger.info(
                     "manifest_apply_success",
                     repo=repo,
                     filename=filename,
                 )
+
+    return errors
 
 
 async def _deploy_load_generators(body: InitializeRequest, config: RunnerConfig) -> None:
