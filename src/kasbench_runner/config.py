@@ -143,10 +143,8 @@ ROLE_PARAMS: dict[str, RoleParameters] = {
 }
 
 MANIFEST_REPOS: list[dict[str, str]] = [
+    {"owner": "kasbench", "repo": "globeco-observability", "tag": "v1.1.5"},
     {"owner": "kasbench", "repo": "globeco-kafka", "tag": "v1.1.5"},
-    {"owner": "kasbench", "repo": "globeco-confirmation-service", "tag": "v1.1.5"},
-    {"owner": "kasbench", "repo": "globeco-execution-service", "tag": "v1.1.5"},
-    {"owner": "kasbench", "repo": "globeco-fix-engine", "tag": "v1.1.5"},
     {"owner": "kasbench", "repo": "globeco-order-generation-service", "tag": "v1.1.5"},
     {"owner": "kasbench", "repo": "globeco-order-service", "tag": "v1.1.5"},
     {"owner": "kasbench", "repo": "globeco-portfolio-accounting-service", "tag": "v1.1.5"},
@@ -155,5 +153,7 @@ MANIFEST_REPOS: list[dict[str, str]] = [
     {"owner": "kasbench", "repo": "globeco-pricing-service", "tag": "v1.1.5"},
     {"owner": "kasbench", "repo": "globeco-security-service", "tag": "v1.1.5"},
     {"owner": "kasbench", "repo": "globeco-trade-service", "tag": "v1.1.5"},
-    {"owner": "kasbench", "repo": "globeco-observability", "tag": "v1.1.5"},
+    {"owner": "kasbench", "repo": "globeco-execution-service", "tag": "v1.1.5"},
+    {"owner": "kasbench", "repo": "globeco-confirmation-service", "tag": "v1.1.5"},
+    {"owner": "kasbench", "repo": "globeco-fix-engine", "tag": "v1.1.5"},
 ]
