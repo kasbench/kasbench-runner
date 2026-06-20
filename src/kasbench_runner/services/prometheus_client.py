@@ -65,9 +65,9 @@ class PrometheusClient:
         """Return the Prometheus range query API URL.
 
         Returns:
-            URL in the format http://{control_plane_node}:32080/api/v1/query_range
+            URL in the format http://{control_plane_node}:31565/api/v1/query_range
         """
-        return f"http://{self._control_plane_node}:32080/api/v1/query_range"
+        return f"http://{self._control_plane_node}:31565/api/v1/query_range"
 
     def substitute_interval(self, query: str, interval: str) -> str:
         """Replace __INTERVAL__ placeholders with the interval value.
