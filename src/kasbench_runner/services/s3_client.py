@@ -112,3 +112,74 @@ class S3Client:
                 exception_class=type(exc).__name__,
                 exception_message=str(exc),
             ) from exc
+
+    async def check_objects_exist(self, keys: list[str]) -> list[str]:
+        """Check which S3 keys already exist.
+
+        Uses head_object for each key. Returns only those that exist.
+
+        Args:
+            keys: List of S3 object keys to check.
+
+        Returns:
+            List of keys that already exist in the bucket.
+
+        Raises:
+            S3OperationError: If a head_object call fails for reasons other than 404.
+        """
+        existing: list[str] = []
+        for key in keys:
+            try:
+                await asyncio.to_thread(
+                    self._s3.head_object,
+                    Bucket=self._bucket,
+                    Key=key,
+                )
+                existing.append(key)
+            except ClientError as exc:
+                error_code = exc.response.get("Error", {}).get("Code", "")
+                if error_code == "404":
+                    continue
+                else:
+                    raise S3OperationError(
+                        bucket=self._bucket,
+                        key=key,
+                        exception_class=type(exc).__name__,
+                        exception_message=str(exc),
+                    ) from exc
+        return existing
+
+    async def upload_json(self, key: str, data: bytes) -> None:
+        """Upload JSON bytes to S3 with ContentType application/json.
+
+        Args:
+            key: The S3 object key.
+            data: JSON content as bytes.
+
+        Raises:
+            S3OperationError: If the upload fails.
+        """
+        log = logger.bind(bucket=self._bucket, key=key)
+        log.info("s3_upload_json_start")
+
+        try:
+            await asyncio.to_thread(
+                self._s3.put_object,
+                Bucket=self._bucket,
+                Key=key,
+                Body=data,
+                ContentType="application/json",
+            )
+            log.info("s3_upload_json_success")
+        except Exception as exc:
+            log.error(
+                "s3_upload_json_error",
+                exception_class=type(exc).__name__,
+                exception_message=str(exc),
+            )
+            raise S3OperationError(
+                bucket=self._bucket,
+                key=key,
+                exception_class=type(exc).__name__,
+                exception_message=str(exc),
+            ) from exc

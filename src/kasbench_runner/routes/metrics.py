@@ -1,223 +1,210 @@
-"""GET /metrics endpoint for the KASBench Benchmark Runner.
+"""POST /metrics endpoint for the KASBench Benchmark Runner.
 
-Scrapes Prometheus metrics from the monitoring namespace, transforms them
-to Pandas DataFrames, serializes to Parquet, and uploads to S3.
+Orchestrates Prometheus range query execution and S3 upload of metric
+results as JSON files.
 
-Requirements: 17.1, 17.2, 17.3, 17.4, 17.5, 17.6
+Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5,
+              3.1, 3.2, 3.3, 3.4, 6.3, 7.1, 8.1, 8.2, 8.3, 8.4,
+              11.1, 11.2, 11.3, 11.4, 11.5
 """
 
 from __future__ import annotations
 
-import asyncio
-import io
+import json
 from datetime import datetime, timezone
 
-import boto3
-import httpx
-import pandas as pd
 import structlog
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from kasbench_runner.errors import build_error_response
+from kasbench_runner.models.requests import MetricsRequest
 from kasbench_runner.models.state import BenchmarkState, BenchmarkStatus
+from kasbench_runner.services.metrics_config import ALL_METRICS
+from kasbench_runner.services.prometheus_client import PrometheusClient
+from kasbench_runner.services.s3_client import S3Client, S3OperationError
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
-# Prometheus endpoint within the monitoring namespace
-PROMETHEUS_URL = "http://prometheus.monitoring.svc:9090/api/v1/query"
-
-# Predefined metrics queries to scrape
-METRICS_QUERIES = [
-    "container_cpu_usage_seconds_total",
-    "container_memory_usage_bytes",
-    "container_network_receive_bytes_total",
-    "container_network_transmit_bytes_total",
-    "kube_pod_status_phase",
-]
+# Terminal statuses that allow metrics collection
+_TERMINAL_STATUSES = {
+    BenchmarkStatus.SUCCESS,
+    BenchmarkStatus.FAILED,
+    BenchmarkStatus.ABORTED,
+}
 
 
-@router.get("/metrics")
-async def get_metrics(request: Request) -> JSONResponse:
-    """Scrape Prometheus metrics, convert to Parquet, and upload to S3.
+@router.post("/metrics")
+async def post_metrics(
+    request: Request, body: MetricsRequest = MetricsRequest()
+) -> JSONResponse:
+    """Collect Prometheus metrics and upload to S3.
 
-    Req 17.1/17.2: Only available when benchmark status is SUCCESS or FAILED.
-    Req 17.3: Scrape Prometheus metrics from monitoring namespace.
-    Req 17.4: Transform to Pandas DataFrames.
-    Req 17.5: Serialize to Parquet format.
-    Req 17.6: Upload to S3.
+    Steps:
+      1. State guard — reject non-terminal statuses
+      2. Validate time bounds
+      3. Overwrite protection
+      4. Execute Prometheus queries
+      5. Upload successful results to S3
+      6. Return 200 (all OK) or 207 (partial failures)
     """
     state: BenchmarkState = request.app.state.benchmark_state
 
-    # Req 17.1, 17.2: Must be success or failed
-    if state.status not in (BenchmarkStatus.SUCCESS, BenchmarkStatus.FAILED):
+    # Step 1: State guard — reject if status not in terminal set
+    if state.status not in _TERMINAL_STATUSES:
         return build_error_response(
             error="benchmark_not_completed",
-            message="Metrics collection is only available after the benchmark has completed (status must be 'success' or 'failed')",
+            message=(
+                "Metrics collection is only available after the benchmark "
+                "has completed (status must be 'success', 'failed', or 'aborted')"
+            ),
             status_code=409,
             current_status=state.status.value,
+        )
+
+    # Step 2: Validate time bounds
+    if state.start_time is None:
+        return build_error_response(
+            error="missing_time_bounds",
+            message="Benchmark start time is not available",
+            status_code=500,
+        )
+
+    if state.end_time is None:
+        return build_error_response(
+            error="missing_time_bounds",
+            message="Benchmark end time is not available",
+            status_code=500,
         )
 
     config = state.config
     run_identifier = config.run_identifier
     trial_identifier = config.trial_identifier
     s3_bucket = config.s3_bucket
+    control_plane_node = config.control_plane_node
+
+    s3_prefix = f"{run_identifier}/{trial_identifier}/metrics/"
 
     log = logger.bind(
         run_identifier=run_identifier,
         trial_identifier=trial_identifier,
+        s3_prefix=s3_prefix,
     )
-    log.info("metrics_collection_start")
+    log.info("metrics_collection_start", overwrite=body.overwrite)
 
-    # Req 17.3: Scrape Prometheus metrics
-    metrics_data = await _scrape_prometheus_metrics()
+    # Build all S3 keys
+    s3_keys = [
+        f"{run_identifier}/{trial_identifier}/metrics/{metric.name}"
+        for metric in ALL_METRICS
+    ]
 
-    # Req 17.4 & 17.5: Transform to DataFrames and serialize to Parquet
-    parquet_files = _transform_to_parquet(metrics_data)
+    # Step 3: Overwrite protection
+    s3_client = S3Client(bucket=s3_bucket)
 
-    # Req 17.6: Upload to S3
-    s3_prefix = f"{run_identifier}/{trial_identifier}/metrics/"
-    file_count = await _upload_to_s3(
-        bucket=s3_bucket,
-        prefix=s3_prefix,
-        parquet_files=parquet_files,
-    )
-
-    log.info("metrics_collection_complete", file_count=file_count)
-
-    return JSONResponse(
-        status_code=200,
-        content={
-            "message": "Metrics collected and uploaded successfully",
-            "file_count": file_count,
-            "s3_prefix": s3_prefix,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        },
-    )
-
-
-async def _scrape_prometheus_metrics() -> dict[str, list[dict]]:
-    """Scrape predefined metrics from Prometheus.
-
-    Returns a dict mapping metric name to list of result dicts from the
-    Prometheus query API.
-    """
-    results: dict[str, list[dict]] = {}
-
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-        for query in METRICS_QUERIES:
-            try:
-                response = await client.get(
-                    PROMETHEUS_URL,
-                    params={"query": query},
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    # Prometheus API returns: {"status": "success", "data": {"result": [...]}}
-                    result_list = (
-                        data.get("data", {}).get("result", [])
-                        if data.get("status") == "success"
-                        else []
-                    )
-                    results[query] = result_list
-                else:
-                    logger.warning(
-                        "prometheus_query_non_200",
-                        query=query,
-                        status_code=response.status_code,
-                    )
-                    results[query] = []
-            except httpx.HTTPError as exc:
-                logger.warning(
-                    "prometheus_query_failed",
-                    query=query,
-                    error=str(exc),
-                )
-                results[query] = []
-
-    return results
-
-
-def _transform_to_parquet(metrics_data: dict[str, list[dict]]) -> dict[str, bytes]:
-    """Transform Prometheus metrics results to Parquet bytes.
-
-    Args:
-        metrics_data: Dict mapping metric name to list of Prometheus result dicts.
-
-    Returns:
-        Dict mapping filename (metric_name.parquet) to Parquet bytes.
-    """
-    parquet_files: dict[str, bytes] = {}
-
-    for metric_name, results in metrics_data.items():
-        if not results:
-            # Create an empty DataFrame with standard columns
-            df = pd.DataFrame(columns=["metric", "labels", "timestamp", "value"])
-        else:
-            rows = []
-            for result in results:
-                metric_labels = result.get("metric", {})
-                value_pair = result.get("value", [])
-                if len(value_pair) == 2:
-                    timestamp, value = value_pair
-                    rows.append(
-                        {
-                            "metric": metric_labels.get("__name__", metric_name),
-                            "labels": str(metric_labels),
-                            "timestamp": float(timestamp),
-                            "value": str(value),
-                        }
-                    )
-            df = pd.DataFrame(rows) if rows else pd.DataFrame(
-                columns=["metric", "labels", "timestamp", "value"]
-            )
-
-        # Req 17.5: Serialize to Parquet
-        buffer = io.BytesIO()
-        df.to_parquet(buffer, engine="pyarrow", index=False)
-        parquet_files[f"{metric_name}.parquet"] = buffer.getvalue()
-
-    return parquet_files
-
-
-async def _upload_to_s3(
-    bucket: str,
-    prefix: str,
-    parquet_files: dict[str, bytes],
-) -> int:
-    """Upload Parquet files to S3.
-
-    Args:
-        bucket: S3 bucket name.
-        prefix: S3 key prefix (e.g. "run001/trial001/metrics/").
-        parquet_files: Dict mapping filename to Parquet bytes.
-
-    Returns:
-        Number of files uploaded.
-    """
-    s3 = boto3.client("s3")
-    file_count = 0
-
-    for filename, parquet_bytes in parquet_files.items():
-        key = f"{prefix}{filename}"
+    if not body.overwrite:
         try:
-            await asyncio.to_thread(
-                s3.put_object,
-                Bucket=bucket,
-                Key=key,
-                Body=parquet_bytes,
-                ContentType="application/octet-stream",
+            existing_keys = await s3_client.check_objects_exist(s3_keys)
+        except S3OperationError as exc:
+            log.error("s3_existence_check_failed", error=str(exc))
+            return build_error_response(
+                error="s3_operation_failed",
+                message=f"S3 existence check failed: {exc.message}",
+                status_code=500,
             )
-            file_count += 1
-            logger.debug("s3_metrics_upload_success", key=key)
-        except Exception as exc:
-            logger.error(
-                "s3_metrics_upload_failed",
-                key=key,
+
+        if existing_keys:
+            # Extract metric names from full keys
+            existing_names = [
+                key.split("/metrics/", 1)[1] for key in existing_keys
+            ]
+            log.warning(
+                "metrics_already_exist",
+                existing_count=len(existing_names),
+            )
+            return build_error_response(
+                error="metrics_already_exist",
+                message=(
+                    f"{len(existing_names)} metric(s) already exist in S3"
+                ),
+                status_code=409,
+                existing=existing_names,
+            )
+
+    # Step 4: Execute Prometheus queries
+    prometheus_client = PrometheusClient(control_plane_node=control_plane_node)
+
+    start_ts = state.start_time.timestamp()
+    end_ts = state.end_time.timestamp()
+
+    query_summary = await prometheus_client.execute_all(
+        metrics=ALL_METRICS,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        step=body.step,
+        interval=body.interval,
+    )
+
+    # Build error list from query failures
+    errors: list[dict] = []
+    for result in query_summary.failed:
+        errors.append(
+            {
+                "metricName": result.metric_name,
+                "phase": "query",
+                "error": result.error_message or "Unknown query error",
+            }
+        )
+
+    # Step 5: Upload successful results to S3
+    upload_count = 0
+    for result in query_summary.successful:
+        key = f"{run_identifier}/{trial_identifier}/metrics/{result.metric_name}"
+        data = json.dumps(result.response_json).encode("utf-8")
+
+        try:
+            await s3_client.upload_json(key=key, data=data)
+            upload_count += 1
+        except S3OperationError as exc:
+            log.error(
+                "s3_upload_failed",
+                metric_name=result.metric_name,
                 error=str(exc),
             )
-            raise
+            errors.append(
+                {
+                    "metricName": result.metric_name,
+                    "phase": "upload",
+                    "error": exc.message,
+                }
+            )
 
-    return file_count
+    # Step 6: Return response
+    metrics_total = len(ALL_METRICS)
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    response_body = {
+        "message": (
+            "All metrics collected and uploaded successfully"
+            if not errors
+            else f"Metrics collection completed with {len(errors)} error(s)"
+        ),
+        "metricsUploaded": upload_count,
+        "metricsTotal": metrics_total,
+        "s3Prefix": s3_prefix,
+        "errors": errors,
+        "timestamp": timestamp,
+    }
+
+    status_code = 200 if not errors else 207
+
+    log.info(
+        "metrics_collection_complete",
+        status_code=status_code,
+        uploaded=upload_count,
+        total=metrics_total,
+        error_count=len(errors),
+    )
+
+    return JSONResponse(status_code=status_code, content=response_body)

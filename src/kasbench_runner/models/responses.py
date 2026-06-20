@@ -58,3 +58,26 @@ class AbortResponse(BaseModel):
     results: dict[str, str]  # role -> "success" | error message
 
     model_config = {"populate_by_name": True, "serialize_by_alias": True}
+
+
+class MetricsErrorEntry(BaseModel):
+    """A single error from metrics collection."""
+
+    metric_name: str = Field(alias="metricName")
+    phase: str  # "query" or "upload"
+    error: str
+
+    model_config = {"populate_by_name": True, "serialize_by_alias": True}
+
+
+class MetricsResponse(BaseModel):
+    """POST /metrics response body."""
+
+    message: str
+    metrics_uploaded: int = Field(alias="metricsUploaded")
+    metrics_total: int = Field(alias="metricsTotal")
+    s3_prefix: str = Field(alias="s3Prefix")
+    errors: list[MetricsErrorEntry] = Field(default_factory=list)
+    timestamp: datetime
+
+    model_config = {"populate_by_name": True, "serialize_by_alias": True}

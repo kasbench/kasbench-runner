@@ -1,0 +1,435 @@
+"""Metric definitions for Prometheus queries.
+
+This module defines all metric queries used to collect performance data
+from the Kubernetes cluster. Metrics are split into counter-type (which
+require rate() wrapping) and gauge-type (instantaneous values).
+"""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class MetricDefinition:
+    """A single metric query definition."""
+
+    metric: str
+    description: str
+    query: str
+    name: str
+    metric_type: str
+
+
+COUNTER_METRICS: list[MetricDefinition] = [
+    MetricDefinition(
+        metric="container_blkio_device_usage_total",
+        description="sum of container_blkio_device_usage_total by container, device, and operation",
+        query='sum by (container, device, operation) (rate(container_blkio_device_usage_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_blkio_device_usage_total-container-_device-_operation",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_cpu_cfs_periods_total",
+        description="sum of container_cpu_cfs_periods_total by container.",
+        query='sum by (container) (rate(container_cpu_cfs_periods_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_cpu_cfs_periods_total-container",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_cpu_cfs_periods_total",
+        description="sum of container_cpu_cfs_periods_total by container and pod.  Container level.",
+        query='sum by (container, pod) (rate(container_cpu_cfs_periods_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_cpu_cfs_periods_total-container-_pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_cpu_cfs_throttled_periods_total",
+        description="sum of container_cpu_cfs_throttled_periods_total by container.",
+        query='sum by (container) (rate(container_cpu_cfs_throttled_periods_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_cpu_cfs_throttled_periods_total-container",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_cpu_cfs_throttled_periods_total",
+        description="sum of container_cpu_cfs_throttled_periods_total by container and pod.",
+        query='sum by (container, pod) (rate(container_cpu_cfs_throttled_periods_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_cpu_cfs_throttled_periods_total-container-_pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_cpu_cfs_throttled_seconds_total",
+        description="sum of container_cpu_cfs_throttled_seconds_total by container.",
+        query='sum by (container) (rate(container_cpu_cfs_throttled_seconds_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_cpu_cfs_throttled_seconds_total-container",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_cpu_cfs_throttled_seconds_total",
+        description="sum of container_cpu_cfs_throttled_seconds_total by container and pod.",
+        query='sum by (container, pod) (rate(container_cpu_cfs_throttled_seconds_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_cpu_cfs_throttled_seconds_total-container-_pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_cpu_system_seconds_total",
+        description="sum of container_cpu_system_seconds_total by container.",
+        query='sum by (container) (rate(container_cpu_system_seconds_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_cpu_system_seconds_total-container",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_cpu_system_seconds_total",
+        description="sum of container_cpu_system_seconds_total by container and pod.",
+        query='sum by (container, pod) (rate(container_cpu_system_seconds_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_cpu_system_seconds_total-container-_pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_cpu_usage_seconds_total",
+        description="sum of container_cpu_usage_seconds_total by container and pod.",
+        query='sum by (container, pod) (rate(container_cpu_usage_seconds_total{namespace="globeco", cpu="total"}[__INTERVAL__]))',
+        name="container_cpu_usage_seconds_total-container-_pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_cpu_usage_seconds_total",
+        description="sum of container_cpu_usage_seconds_total by container.",
+        query='sum by (container) (rate(container_cpu_usage_seconds_total{namespace="globeco", cpu="total"}[__INTERVAL__]))',
+        name="container_cpu_usage_seconds_total-container",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_cpu_user_seconds_total",
+        description="sum of container_cpu_user_seconds_total by container.",
+        query='sum by (container) (rate(container_cpu_user_seconds_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_cpu_user_seconds_total-container",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_cpu_user_seconds_total",
+        description="sum of container_cpu_user_seconds_total by container and pod.",
+        query='sum by (container, pod) (rate(container_cpu_user_seconds_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_cpu_user_seconds_total-container-_pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_fs_reads_bytes_total",
+        description="sum of container_fs_reads_bytes_total by container and device.",
+        query='sum by (container, device) (rate(container_fs_reads_bytes_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_fs_reads_bytes_total-container-_device",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_fs_reads_bytes_total",
+        description="sum of container_fs_reads_bytes_total by container, pod, and device.",
+        query='sum by (container, pod, device) (rate(container_fs_reads_bytes_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_fs_reads_bytes_total-container-_pod-_device",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_fs_reads_total",
+        description="sum of container_fs_reads_total by container and device.",
+        query='sum by (container, device) (rate(container_fs_reads_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_fs_reads_total-container-_device",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_fs_reads_total",
+        description="sum of container_fs_reads_total by container, pod, and device.",
+        query='sum by (container, pod, device) (rate(container_fs_reads_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_fs_reads_total-container-_pod-_device",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_fs_writes_bytes_total",
+        description="sum of container_fs_writes_bytes_total by container and device.",
+        query='sum by (container, device) (rate(container_fs_writes_bytes_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_fs_writes_bytes_total-container-_device",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_fs_writes_bytes_total",
+        description="sum of container_fs_writes_bytes_total by container, pod, and device.",
+        query='sum by (container, pod, device) (rate(container_fs_writes_bytes_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_fs_writes_bytes_total-container-_pod-_device",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_fs_writes_total",
+        description="sum of container_fs_writes_total by container and device.",
+        query='sum by (container, device) (rate(container_fs_writes_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_fs_writes_total-container-_device",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_fs_writes_total",
+        description="sum of container_fs_writes_total by container, pod, and device.",
+        query='sum by (container, pod, device) (rate(container_fs_writes_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_fs_writes_total-container-_pod-_device",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_memory_failcnt",
+        description="sum of container_memory_failcnt by container.",
+        query='sum by (container) (rate(container_memory_failcnt{namespace="globeco"}[__INTERVAL__]))',
+        name="container_memory_failcnt-container",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_memory_failcnt",
+        description="sum of container_memory_failcnt by container and pod.",
+        query='sum by (container, pod) (rate(container_memory_failcnt{namespace="globeco"}[__INTERVAL__]))',
+        name="container_memory_failcnt-container-_pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_memory_failures_total",
+        description="sum of container_memory_failures_total by container and failure_type.",
+        query='sum by (container) (rate(container_memory_failures_total{namespace="globeco", scope="container"}[__INTERVAL__]))',
+        name="container_memory_failures_total-container-_failure_type",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_memory_failures_total",
+        description="sum of container_memory_failures_total by container, pod, and failure_type.",
+        query='sum by (container, pod, failure_type) (rate(container_memory_failures_total{namespace="globeco", scope="container"}[__INTERVAL__]))',
+        name="container_memory_failures_total-container-_pod-_failure_type",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_network_receive_bytes_total",
+        description="sum of container_network_receive_bytes_total by pod.",
+        query='sum by (pod) (rate(container_network_receive_bytes_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_network_receive_bytes_total-pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_network_receive_errors_total",
+        description="sum of container_network_receive_errors_total by pod.",
+        query='sum by (pod) (rate(container_network_receive_errors_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_network_receive_errors_total-pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_network_receive_packets_dropped_total",
+        description="sum of container_network_receive_packets_dropped_total by pod.",
+        query='sum by (pod) (rate(container_network_receive_packets_dropped_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_network_receive_packets_dropped_total-pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_network_receive_packets_total",
+        description="sum of container_network_receive_packets_total by pod.",
+        query='sum by (pod) (rate(container_network_receive_packets_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_network_receive_packets_total-pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_network_transmit_bytes_total",
+        description="sum of container_network_transmit_bytes_total by pod.",
+        query='sum by (pod) (rate(container_network_transmit_bytes_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_network_transmit_bytes_total-pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_network_transmit_errors_total",
+        description="sum of container_network_transmit_errors_total by pod.",
+        query='sum by (pod) (rate(container_network_transmit_errors_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_network_transmit_errors_total-pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_network_transmit_packets_dropped_total",
+        description="sum of container_network_transmit_packets_dropped_total by pod.",
+        query='sum by (pod) (rate(container_network_transmit_packets_dropped_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_network_transmit_packets_dropped_total-pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_network_transmit_packets_total",
+        description="sum of container_network_transmit_packets_total by pod.",
+        query='sum by (pod) (rate(container_network_transmit_packets_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_network_transmit_packets_total-pod",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_oom_events_total",
+        description="sum of container_oom_events_total by container.",
+        query='sum by (container) (rate(container_oom_events_total{namespace="globeco"}[__INTERVAL__]))',
+        name="container_oom_events_total-container",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_pressure_cpu_stalled_seconds_total",
+        description="sum of container_pressure_cpu_stalled_seconds_total by container_label_io_kubernetes_container_name.",
+        query='sum by (container_label_io_kubernetes_container_name) (rate(container_pressure_cpu_stalled_seconds_total{container_label_io_kubernetes_pod_namespace="globeco"}[__INTERVAL__]))',
+        name="container_pressure_cpu_stalled_seconds_total-container_label_io_kubernetes_container_name",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_pressure_cpu_waiting_seconds_total",
+        description="sum of container_pressure_cpu_waiting_seconds_total by container_label_io_kubernetes_container_name.",
+        query='sum by (container_label_io_kubernetes_container_name) (rate(container_pressure_cpu_waiting_seconds_total{container_label_io_kubernetes_pod_namespace="globeco"}[__INTERVAL__]))',
+        name="container_pressure_cpu_waiting_seconds_total-container_label_io_kubernetes_container_name",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_pressure_io_stalled_seconds_total",
+        description="sum of container_pressure_io_stalled_seconds_total by container_label_io_kubernetes_container_name.",
+        query='sum by (container_label_io_kubernetes_container_name) (rate(container_pressure_io_stalled_seconds_total{container_label_io_kubernetes_pod_namespace="globeco"}[__INTERVAL__]))',
+        name="container_pressure_io_stalled_seconds_total-container_label_io_kubernetes_container_name",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_pressure_io_waiting_seconds_total",
+        description="sum of container_pressure_io_waiting_seconds_total by container_label_io_kubernetes_container_name.",
+        query='sum by (container_label_io_kubernetes_container_name) (rate(container_pressure_io_waiting_seconds_total{container_label_io_kubernetes_pod_namespace="globeco"}[__INTERVAL__]))',
+        name="container_pressure_io_waiting_seconds_total-container_label_io_kubernetes_container_name",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_pressure_memory_stalled_seconds_total",
+        description="sum of container_pressure_memory_stalled_seconds_total by container_label_io_kubernetes_container_name.",
+        query='sum by (container_label_io_kubernetes_container_name) (rate(container_pressure_memory_stalled_seconds_total{container_label_io_kubernetes_pod_namespace="globeco"}[__INTERVAL__]))',
+        name="container_pressure_memory_stalled_seconds_total-container_label_io_kubernetes_container_name",
+        metric_type="counter",
+    ),
+    MetricDefinition(
+        metric="container_pressure_memory_waiting_seconds_total",
+        description="sum of container_pressure_memory_waiting_seconds_total by container_label_io_kubernetes_container_name.",
+        query='sum by (container_label_io_kubernetes_container_name) (rate(container_pressure_memory_waiting_seconds_total{container_label_io_kubernetes_pod_namespace="globeco"}[__INTERVAL__]))',
+        name="container_pressure_memory_waiting_seconds_total-container_label_io_kubernetes_container_name",
+        metric_type="counter",
+    ),
+]
+
+
+GAUGE_METRICS: list[MetricDefinition] = [
+    MetricDefinition(
+        metric="container_cpu_load_average_10s",
+        description="sum of container_cpu_load_average_10s by container.",
+        query='sum by (container) (container_cpu_load_average_10s{namespace="globeco"})',
+        name="container_cpu_load_average_10s-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="container_cpu_load_d_average_10s",
+        description="sum of container_cpu_load_d_average_10s by container.",
+        query='sum by (container) (container_cpu_load_d_average_10s{namespace="globeco"})',
+        name="container_cpu_load_d_average_10s-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="container_memory_max_usage_bytes",
+        description="sum of container_memory_max_usage_bytes by container.",
+        query='sum by (container) (container_memory_max_usage_bytes{namespace="globeco"})',
+        name="container_memory_max_usage_bytes-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="container_memory_rss",
+        description="sum of container_memory_rss by container.",
+        query='sum by (container) (container_memory_rss{namespace="globeco"})',
+        name="container_memory_rss-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="container_memory_swap",
+        description="sum of container_memory_swap by container.",
+        query='sum by (container) (container_memory_swap{namespace="globeco"})',
+        name="container_memory_swap-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="container_memory_usage_bytes",
+        description="sum of container_memory_usage_bytes by container.",
+        query='sum by (container) (container_memory_usage_bytes{namespace="globeco"})',
+        name="container_memory_usage_bytes-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="container_memory_working_set_bytes",
+        description="sum of container_memory_working_set_bytes by container.",
+        query='sum by (container) (container_memory_working_set_bytes{namespace="globeco"})',
+        name="container_memory_working_set_bytes-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="container_spec_cpu_period",
+        description="sum of container_spec_cpu_period by container.",
+        query='sum by (container) (container_spec_cpu_period{namespace="globeco"})',
+        name="container_spec_cpu_period-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="container_spec_cpu_quota",
+        description="sum of container_spec_cpu_quota by container.",
+        query='sum by (container) (container_spec_cpu_quota{namespace="globeco"})',
+        name="container_spec_cpu_quota-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="container_spec_cpu_shares",
+        description="sum of container_spec_cpu_shares by container.",
+        query='sum by (container) (container_spec_cpu_shares{namespace="globeco"})',
+        name="container_spec_cpu_shares-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="container_spec_memory_limit_bytes",
+        description="sum of container_spec_memory_limit_bytes by container.",
+        query='sum by (container) (container_spec_memory_limit_bytes{namespace="globeco"})',
+        name="container_spec_memory_limit_bytes-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="container_spec_memory_reservation_limit_bytes",
+        description="sum of container_spec_memory_reservation_limit_bytes by container.",
+        query='sum by (container) (container_spec_memory_reservation_limit_bytes{namespace="globeco"})',
+        name="container_spec_memory_reservation_limit_bytes-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="container_spec_memory_swap_limit_bytes",
+        description="sum of container_spec_memory_swap_limit_bytes by container.",
+        query='sum by (container) (container_spec_memory_swap_limit_bytes{namespace="globeco"})',
+        name="container_spec_memory_swap_limit_bytes-container",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="kube_deployment_status_replicas",
+        description="sum of kube_deployment_status_replicas by deployment.",
+        query='sum by (deployment) (kube_deployment_status_replicas{namespace="globeco"})',
+        name="kube_deployment_status_replicas-deployment",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="kube_pod_container_resource_requests",
+        description="sum of kube_pod_container_resource_requests by container for cpu.",
+        query='sum by (container) (kube_pod_container_resource_requests{namespace="globeco", resource="cpu"})',
+        name="kube_pod_container_resource_requests-container,cpu",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="kube_pod_container_resource_requests",
+        description="sum of kube_pod_container_resource_requests by container for memory.",
+        query='sum by (container) (kube_pod_container_resource_requests{namespace="globeco", resource="memory", unit="byte"})',
+        name="kube_pod_container_resource_requests-container,memory",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="kube_pod_container_resource_limits",
+        description="sum of kube_pod_container_resource_limits by container for cpu.",
+        query='sum by (container) (kube_pod_container_resource_limits{namespace="globeco", resource="cpu"})',
+        name="kube_pod_container_resource_limits-container,cpu",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="kube_pod_container_resource_limits",
+        description="sum of kube_pod_container_resource_limits by container for memory.",
+        query='sum by (container) (kube_pod_container_resource_limits{namespace="globeco", resource="memory", unit="byte"})',
+        name="kube_pod_container_resource_limits-container,memory",
+        metric_type="gauge",
+    ),
+]
+
+ALL_METRICS: list[MetricDefinition] = COUNTER_METRICS + GAUGE_METRICS

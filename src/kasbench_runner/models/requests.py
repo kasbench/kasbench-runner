@@ -38,3 +38,13 @@ class InitializeRequest(BaseModel):
     force_manifest_install: bool = Field(default=False, alias="forceManifestInstall")
 
     model_config = {"populate_by_name": True}
+
+
+class MetricsRequest(BaseModel):
+    """POST /metrics optional request body."""
+
+    overwrite: bool = False
+    interval: str = "60s"
+    step: str = "15s"
+
+    model_config = {"extra": "ignore"}

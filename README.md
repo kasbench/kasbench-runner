@@ -181,11 +181,40 @@ Abort a running benchmark (best-effort across all generators).
 
 ---
 
-### GET /metrics
+### POST /metrics
 
-Scrape Prometheus metrics, convert to Parquet, and upload to S3.
+Execute Prometheus range queries for all configured benchmark metrics and upload results as JSON files to S3.
 
-**Responses:** `200` with file count, `409` benchmark not yet completed.
+**Request Body (optional):**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `overwrite` | bool | `false` | Allow overwriting existing metric files in S3 |
+| `interval` | string | `"60s"` | Prometheus duration for `__INTERVAL__` substitution in counter queries |
+| `step` | string | `"15s"` | Resolution step for range queries |
+
+**Success Response (200):**
+
+```json
+{
+  "message": "Metrics collected and uploaded successfully",
+  "metricsUploaded": 54,
+  "metricsTotal": 54,
+  "s3Prefix": "run001/trial001/metrics/",
+  "timestamp": "2026-06-10T14:40:00.000000+00:00"
+}
+```
+
+**Error Responses:**
+
+| Status | Error | Condition |
+|--------|-------|-----------|
+| `409` | `benchmark_not_completed` | Benchmark status is `not-initialized`, `not-started`, or `running` |
+| `409` | `metrics_already_exist` | `overwrite` is false and metric files already exist in S3 |
+| `207` | Partial success | One or more queries or uploads failed; response includes error details |
+| `500` | `missing_time_bounds` | Benchmark start_time or end_time is not available |
+
+**Allowed States:** `success`, `failed`, `aborted`
 
 ---
 
@@ -387,33 +416,57 @@ curl -s -X POST http://localhost:8080/abort | jq .
 }
 ```
 
-### GET /metrics
+### POST /metrics — default invocation
 
 ```bash
-curl -s http://localhost:8080/metrics | jq .
+curl -s -X POST http://localhost:8080/metrics | jq .
 ```
 
 **Expected response (200):**
 ```json
 {
   "message": "Metrics collected and uploaded successfully",
-  "file_count": 5,
-  "s3_prefix": "run001/trial001/metrics/",
+  "metricsUploaded": 54,
+  "metricsTotal": 54,
+  "s3Prefix": "run001/trial001/metrics/",
   "timestamp": "2026-06-10T14:40:00.000000+00:00"
 }
 ```
 
-### GET /metrics — benchmark not completed
+### POST /metrics — custom parameters
 
 ```bash
-curl -s http://localhost:8080/metrics | jq .
+curl -s -X POST http://localhost:8080/metrics \
+  -H "Content-Type: application/json" \
+  -d '{
+    "overwrite": true,
+    "interval": "30s",
+    "step": "10s"
+  }' | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "message": "Metrics collected and uploaded successfully",
+  "metricsUploaded": 54,
+  "metricsTotal": 54,
+  "s3Prefix": "run001/trial001/metrics/",
+  "timestamp": "2026-06-10T14:40:00.000000+00:00"
+}
+```
+
+### POST /metrics — benchmark not completed
+
+```bash
+curl -s -X POST http://localhost:8080/metrics | jq .
 ```
 
 **Expected response (409):**
 ```json
 {
   "error": "benchmark_not_completed",
-  "message": "Metrics collection is only available after the benchmark has completed (status must be 'success' or 'failed')",
+  "message": "Metrics collection is only available after the benchmark has completed",
   "context": {"current_status": "running"},
   "timestamp": "2026-06-10T14:35:00.000000+00:00"
 }
@@ -465,7 +518,7 @@ curl -s "$RUNNER/status" | jq .
 
 echo ""
 echo "=== 6. Collect metrics ==="
-curl -s "$RUNNER/metrics" | jq .
+curl -s -X POST "$RUNNER/metrics" | jq .
 
 echo ""
 echo "=== 7. Download outputs ==="
@@ -553,7 +606,7 @@ kasbench-runner/
 │   │   ├── output.py                # GET /output/{role}
 │   │   ├── db.py                    # GET /db/{role}
 │   │   ├── abort.py                 # POST /abort
-│   │   └── metrics.py               # GET /metrics
+│   │   └── metrics.py               # POST /metrics
 │   └── services/
 │       ├── ssh_client.py            # Async SSH via asyncssh
 │       ├── docker_manager.py        # Docker CLI operations
@@ -561,6 +614,8 @@ kasbench-runner/
 │       ├── manifest_parser.py       # k8s.lst parsing + execution
 │       ├── load_generator_client.py # HTTP client for generators
 │       ├── s3_client.py             # S3 reservation + upload
+│       ├── metrics_config.py        # Prometheus metric definitions
+│       ├── prometheus_client.py     # Prometheus range query client
 │       └── health_checker.py        # Retry-based health polling
 └── tests/                           # Test suite
 ```
