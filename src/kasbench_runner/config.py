@@ -156,4 +156,5 @@ MANIFEST_REPOS: list[dict[str, str]] = [
     {"owner": "kasbench", "repo": "globeco-execution-service", "tag": "v1.1.5"},
     {"owner": "kasbench", "repo": "globeco-confirmation-service", "tag": "v1.1.5"},
     {"owner": "kasbench", "repo": "globeco-fix-engine", "tag": "v1.1.5"},
+    {"owner": "kasbench", "repo": "globeco-allocation-service", "tag": "v1.1.5"},
 ]
