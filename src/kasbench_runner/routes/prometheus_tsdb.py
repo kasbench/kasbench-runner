@@ -8,7 +8,7 @@ Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 5.11
 
 from __future__ import annotations
 
-import io
+import os
 import shutil
 import tarfile
 import tempfile
@@ -150,16 +150,24 @@ async def post_prometheus_tsdb_export(
         # Use pod exec to tar the snapshot and stream it locally
         # The tar command packs the snapshot directory; we unpack locally
         tar_command = ["tar", "cf", "-", "-C", "/data/snapshots", snapshot_name]
-        exec_result = await pod.exec(tar_command)
 
-        # Write the tar output to a temporary file and extract
-        tar_bytes = exec_result.stdout if hasattr(exec_result, "stdout") else exec_result
-        if isinstance(tar_bytes, str):
-            tar_bytes = tar_bytes.encode("latin-1")
+        # Stream tar output directly to a temp file to avoid large binary
+        # data issues with WebSocket-based exec capture
+        tar_file_path = os.path.join(temp_dir, "_snapshot.tar")
+        with open(tar_file_path, "wb") as tar_out:
+            exec_result = await pod.exec(
+                tar_command,
+                container="prometheus-server",
+                stdout=tar_out,
+                check=True,
+            )
 
-        tar_buffer = io.BytesIO(tar_bytes)
-        with tarfile.open(fileobj=tar_buffer, mode="r:") as tar:
+        # Extract the tar archive
+        with tarfile.open(tar_file_path, mode="r:") as tar:
             tar.extractall(path=temp_dir)
+
+        # Remove the intermediate tar file
+        os.remove(tar_file_path)
 
         log.info("snapshot_copied_to_local", temp_dir=temp_dir)
     except Exception as exc:

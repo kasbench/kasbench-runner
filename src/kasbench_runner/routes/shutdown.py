@@ -36,7 +36,7 @@ async def _delete_namespace(name: str) -> NamespaceResult:
 
         async def _do_delete() -> None:
             api = await kr8s.asyncio.api()
-            namespaces = await api.get("namespaces", field_selector=f"metadata.name={name}")
+            namespaces = [ns async for ns in api.get("namespaces", field_selector=f"metadata.name={name}")]
             if namespaces:
                 ns = namespaces[0]
                 await ns.delete()
