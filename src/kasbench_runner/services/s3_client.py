@@ -1,6 +1,8 @@
 """S3 client service for trial reservation and artifact operations."""
 
 import asyncio
+import os
+from pathlib import Path
 
 import boto3
 import structlog
@@ -180,6 +182,97 @@ class S3Client:
             raise S3OperationError(
                 bucket=self._bucket,
                 key=key,
+                exception_class=type(exc).__name__,
+                exception_message=str(exc),
+            ) from exc
+
+    async def upload_bytes(self, key: str, data: bytes, content_type: str) -> None:
+        """Upload arbitrary bytes to S3 with the specified content type.
+
+        Args:
+            key: The S3 object key.
+            data: Content as bytes.
+            content_type: The MIME content type for the object.
+
+        Raises:
+            S3OperationError: If the upload fails.
+        """
+        log = logger.bind(bucket=self._bucket, key=key)
+        log.info("s3_upload_bytes_start", content_type=content_type)
+
+        try:
+            await asyncio.to_thread(
+                self._s3.put_object,
+                Bucket=self._bucket,
+                Key=key,
+                Body=data,
+                ContentType=content_type,
+            )
+            log.info("s3_upload_bytes_success")
+        except Exception as exc:
+            log.error(
+                "s3_upload_bytes_error",
+                exception_class=type(exc).__name__,
+                exception_message=str(exc),
+            )
+            raise S3OperationError(
+                bucket=self._bucket,
+                key=key,
+                exception_class=type(exc).__name__,
+                exception_message=str(exc),
+            ) from exc
+
+    async def upload_directory(self, prefix: str, local_dir: str) -> list[str]:
+        """Walk a local directory and upload each file to S3 under the given prefix.
+
+        The directory structure is preserved relative to local_dir. For example,
+        if local_dir contains `subdir/file.txt` and prefix is `run001/trial001/tsdb`,
+        the file is uploaded to `run001/trial001/tsdb/subdir/file.txt`.
+
+        Args:
+            prefix: The S3 key prefix (no trailing slash required).
+            local_dir: Path to the local directory to upload.
+
+        Returns:
+            List of S3 keys that were uploaded.
+
+        Raises:
+            S3OperationError: If any upload fails.
+        """
+        log = logger.bind(bucket=self._bucket, prefix=prefix, local_dir=local_dir)
+        log.info("s3_upload_directory_start")
+
+        uploaded_keys: list[str] = []
+        local_path = Path(local_dir)
+
+        try:
+            for root, _dirs, files in os.walk(local_dir):
+                for filename in files:
+                    file_path = Path(root) / filename
+                    relative_path = file_path.relative_to(local_path)
+                    key = f"{prefix}/{relative_path}"
+
+                    file_data = await asyncio.to_thread(file_path.read_bytes)
+                    await asyncio.to_thread(
+                        self._s3.put_object,
+                        Bucket=self._bucket,
+                        Key=key,
+                        Body=file_data,
+                    )
+                    uploaded_keys.append(key)
+
+            log.info("s3_upload_directory_success", files_uploaded=len(uploaded_keys))
+            return uploaded_keys
+        except Exception as exc:
+            log.error(
+                "s3_upload_directory_error",
+                exception_class=type(exc).__name__,
+                exception_message=str(exc),
+                files_uploaded_before_error=len(uploaded_keys),
+            )
+            raise S3OperationError(
+                bucket=self._bucket,
+                key=prefix,
                 exception_class=type(exc).__name__,
                 exception_message=str(exc),
             ) from exc

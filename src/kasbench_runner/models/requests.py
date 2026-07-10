@@ -40,11 +40,20 @@ class InitializeRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class MetricsRequest(BaseModel):
-    """POST /metrics optional request body."""
+class MetricsExportRequest(BaseModel):
+    """POST /metrics/export request body."""
 
     overwrite: bool = False
     interval: str = "60s"
     step: str = "15s"
+    prometheus_port: int = Field(default=31565, alias="prometheusPort", ge=1, le=65535)
 
-    model_config = {"extra": "ignore"}
+    model_config = {"extra": "ignore", "populate_by_name": True}
+
+
+class TsdbExportRequest(BaseModel):
+    """POST /prometheus/tsdb/export request body."""
+
+    prometheus_port: int = Field(default=31565, alias="prometheusPort", ge=1, le=65535)
+
+    model_config = {"extra": "ignore", "populate_by_name": True}

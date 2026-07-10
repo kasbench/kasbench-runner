@@ -1,4 +1,4 @@
-"""POST /metrics endpoint for the KASBench Benchmark Runner.
+"""POST /metrics/export endpoint for the KASBench Benchmark Runner.
 
 Orchestrates Prometheus range query execution and S3 upload of metric
 results as JSON files.
@@ -18,7 +18,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from kasbench_runner.errors import build_error_response
-from kasbench_runner.models.requests import MetricsRequest
+from kasbench_runner.models.requests import MetricsExportRequest
 from kasbench_runner.models.state import BenchmarkState, BenchmarkStatus
 from kasbench_runner.services.metrics_config import ALL_METRICS
 from kasbench_runner.services.prometheus_client import PrometheusClient
@@ -36,9 +36,9 @@ _TERMINAL_STATUSES = {
 }
 
 
-@router.post("/metrics")
+@router.post("/metrics/export")
 async def post_metrics(
-    request: Request, body: MetricsRequest = MetricsRequest()
+    request: Request, body: MetricsExportRequest = MetricsExportRequest()
 ) -> JSONResponse:
     """Collect Prometheus metrics and upload to S3.
 
@@ -144,6 +144,7 @@ async def post_metrics(
         end_ts=end_ts,
         step=body.step,
         interval=body.interval,
+        port=body.prometheus_port,
     )
 
     # Build error list from query failures

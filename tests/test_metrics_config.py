@@ -14,18 +14,18 @@ from kasbench_runner.services.metrics_config import (
 
 
 def test_counter_metrics_count():
-    """COUNTER_METRICS should have exactly 36 entries."""
-    assert len(COUNTER_METRICS) == 36
+    """COUNTER_METRICS should have exactly 43 entries (36 original + 7 Kafka)."""
+    assert len(COUNTER_METRICS) == 43
 
 
 def test_gauge_metrics_count():
-    """GAUGE_METRICS should have exactly 18 entries."""
-    assert len(GAUGE_METRICS) == 18
+    """GAUGE_METRICS should have exactly 27 entries (18 original + 9 Kafka)."""
+    assert len(GAUGE_METRICS) == 27
 
 
 def test_all_metrics_count():
-    """ALL_METRICS should have exactly 54 entries (36 + 18)."""
-    assert len(ALL_METRICS) == 54
+    """ALL_METRICS should have exactly 70 entries (43 + 27)."""
+    assert len(ALL_METRICS) == 70
 
 
 def test_all_metrics_is_concatenation():

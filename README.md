@@ -181,7 +181,7 @@ Abort a running benchmark (best-effort across all generators).
 
 ---
 
-### POST /metrics
+### POST /metrics/export
 
 Execute Prometheus range queries for all configured benchmark metrics and upload results as JSON files to S3.
 
@@ -192,6 +192,7 @@ Execute Prometheus range queries for all configured benchmark metrics and upload
 | `overwrite` | bool | `false` | Allow overwriting existing metric files in S3 |
 | `interval` | string | `"60s"` | Prometheus duration for `__INTERVAL__` substitution in counter queries |
 | `step` | string | `"15s"` | Resolution step for range queries |
+| `prometheusPort` | int | `31565` | Prometheus server port (1–65535) |
 
 **Success Response (200):**
 
@@ -215,6 +216,201 @@ Execute Prometheus range queries for all configured benchmark metrics and upload
 | `500` | `missing_time_bounds` | Benchmark start_time or end_time is not available |
 
 **Allowed States:** `success`, `failed`, `aborted`
+
+---
+
+### POST /prometheus/tsdb/export
+
+Trigger a Prometheus TSDB snapshot, copy it from the prometheus-server pod, and upload to S3.
+
+**Request Body (optional):**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `prometheusPort` | int | `31565` | Prometheus server port (1–65535) |
+
+**Success Response (200):**
+
+```json
+{
+  "s3Path": "run001/trial001/tsdb-snapshots",
+  "timestamp": "2026-06-10T14:42:00.000000+00:00"
+}
+```
+
+**Error Responses:**
+
+| Status | Error | Condition |
+|--------|-------|-----------|
+| `409` | `not_initialized` | Benchmark has not been initialized |
+| `502` | `prometheus_api_failed` | Prometheus snapshot API call failed or timed out (30s) |
+| `500` | `pod_not_found` | No prometheus-server pod found in `monitoring` namespace |
+| `500` | `copy_failed` | Snapshot copy from pod failed |
+| `500` | `s3_upload_failed` | S3 upload failed |
+
+**Allowed States:** Any state except `not-initialized`
+
+---
+
+### POST /output/export
+
+Export output from all five load generators to S3.
+
+### POST /output/export/{role}
+
+Export output from a single load generator to S3.
+
+**Path Parameters:** `role` — one of `back-office`, `portfolio-manager`, `trader`, `investor`, `it-operations`
+
+**S3 Path:** `{s3Bucket}/{runIdentifier}/{trialIdentifier}/output/{role}-output.txt`
+
+**Success Response (200):**
+
+```json
+{
+  "message": "Output exported successfully",
+  "filesExported": 5,
+  "s3Prefix": "run001/trial001/output/",
+  "timestamp": "2026-06-10T14:43:00.000000+00:00"
+}
+```
+
+**Partial Success Response (207):**
+
+```json
+{
+  "message": "Partial export completed",
+  "filesExported": 3,
+  "results": [
+    {"role": "back-office", "status": "success", "s3Key": "run001/trial001/output/back-office-output.txt"},
+    {"role": "trader", "status": "failed", "error": "Connection refused"}
+  ],
+  "timestamp": "2026-06-10T14:43:00.000000+00:00"
+}
+```
+
+**Error Responses:**
+
+| Status | Error | Condition |
+|--------|-------|-----------|
+| `400` | `invalid_role` | Role path parameter is not one of the 5 valid roles |
+| `409` | `not_initialized` | Benchmark has not been initialized |
+| `502` | `connection_failed` | Load generator connection failed or timed out |
+| `500` | `s3_upload_failed` | S3 upload failed |
+
+**Allowed States:** Any state except `not-initialized`
+
+---
+
+### POST /db/export
+
+Export databases from all five load generators to S3.
+
+### POST /db/export/{role}
+
+Export a database from a single load generator to S3.
+
+**Path Parameters:** `role` — one of `back-office`, `portfolio-manager`, `trader`, `investor`, `it-operations`
+
+**S3 Path:** `{s3Bucket}/{runIdentifier}/{trialIdentifier}/db/{role}.db`
+
+**Success Response (200):**
+
+```json
+{
+  "message": "Database export completed successfully",
+  "filesExported": 5,
+  "results": [
+    {"role": "back-office", "status": "success", "s3Key": "run001/trial001/db/back-office.db"},
+    {"role": "portfolio-manager", "status": "success", "s3Key": "run001/trial001/db/portfolio-manager.db"},
+    {"role": "trader", "status": "success", "s3Key": "run001/trial001/db/trader.db"},
+    {"role": "investor", "status": "success", "s3Key": "run001/trial001/db/investor.db"},
+    {"role": "it-operations", "status": "success", "s3Key": "run001/trial001/db/it-operations.db"}
+  ],
+  "timestamp": "2026-06-10T14:44:00.000000+00:00"
+}
+```
+
+**Error Responses:**
+
+| Status | Error | Condition |
+|--------|-------|-----------|
+| `400` | `invalid_role` | Role path parameter is not one of the 5 valid roles |
+| `409` | `not_initialized` | Benchmark has not been initialized |
+| `502` | `load_generator_failed` | Load generator returned non-200 or connection timed out (10s) |
+| `500` | `s3_upload_failed` | S3 upload failed |
+
+**Allowed States:** Any state except `not-initialized`
+
+---
+
+### POST /metadata/export
+
+Export a comprehensive metadata document (run_details.json) to S3 capturing the full benchmark configuration and state.
+
+**S3 Path:** `{s3Bucket}/{runIdentifier}/{trialIdentifier}/run_details.json`
+
+**JSON Document Fields:**
+
+| Field | Description |
+|-------|-------------|
+| `timestamp` | ISO 8601 UTC generation time |
+| `environment` | All 12 RunnerConfig fields (HOST, PORT, SSH_USER, SSH_CONNECT_TIMEOUT, NODE_READINESS_TIMEOUT_SECONDS, NODE_READINESS_POLL_INTERVAL, HEALTH_CHECK_MAX_ATTEMPTS, HEALTH_CHECK_INTERVAL_SECONDS, RABBITMQ_IMAGE, HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT, MANIFEST_FETCH_TIMEOUT) |
+| `initialization` | All 15 initialization fields (autoscaler, controlPlaneNode, amdWorkerNodes, armWorkerNodes, s3Bucket, globecoUrl, runIdentifier, trialIdentifier, clusterCidrRange, kubernetesVersion, loadGeneratorImage, runDurationMinutes, globecoPort, skipKubernetesInstall, skipManifestInstall, forceManifestInstall) |
+| `roles` | Per-role parameters (base_load_intensity, base_delay_percentage, spawn_rate) for all 5 roles |
+| `manifests` | Kubernetes manifest repositories with owner, repo, and tag fields |
+| `status` | Full status response equivalent to GET /status (overall status, start_time, end_time, load_generators) |
+
+**Success Response (200):**
+
+```json
+{
+  "s3Key": "run001/trial001/run_details.json",
+  "timestamp": "2026-06-10T14:45:00.000000+00:00"
+}
+```
+
+**Error Responses:**
+
+| Status | Error | Condition |
+|--------|-------|-----------|
+| `409` | `not_initialized` | Benchmark has not been initialized |
+| `500` | `s3_upload_failed` | S3 upload failed |
+
+**Allowed States:** Any state except `not-initialized`
+
+---
+
+### POST /shutdown
+
+Delete Kubernetes namespaces with PVCs to cleanly release storage volumes before cluster destruction.
+
+**Namespaces Deleted (in order):** `globeco`, `elasticsearch`, `observability`, `monitoring`
+
+Each namespace deletion waits up to 60 seconds. If a deletion fails or times out, processing continues with the next namespace.
+
+**Success Response (200):**
+
+```json
+{
+  "results": [
+    {"namespace": "globeco", "status": "success"},
+    {"namespace": "elasticsearch", "status": "success"},
+    {"namespace": "observability", "status": "success"},
+    {"namespace": "monitoring", "status": "success"}
+  ],
+  "timestamp": "2026-06-10T14:46:00.000000+00:00"
+}
+```
+
+**Error Responses:**
+
+| Status | Error | Condition |
+|--------|-------|-----------|
+| `409` | `not_initialized` | Benchmark has not been initialized |
+| `409` | `benchmark_running` | Benchmark is currently running; shutdown is not permitted |
+
+**Allowed States:** `not-started`, `success`, `failed`, `aborted`
 
 ---
 
@@ -416,10 +612,10 @@ curl -s -X POST http://localhost:8080/abort | jq .
 }
 ```
 
-### POST /metrics — default invocation
+### POST /metrics/export — default invocation
 
 ```bash
-curl -s -X POST http://localhost:8080/metrics | jq .
+curl -s -X POST http://localhost:8080/metrics/export | jq .
 ```
 
 **Expected response (200):**
@@ -433,15 +629,16 @@ curl -s -X POST http://localhost:8080/metrics | jq .
 }
 ```
 
-### POST /metrics — custom parameters
+### POST /metrics/export — custom parameters with Prometheus port
 
 ```bash
-curl -s -X POST http://localhost:8080/metrics \
+curl -s -X POST http://localhost:8080/metrics/export \
   -H "Content-Type: application/json" \
   -d '{
     "overwrite": true,
     "interval": "30s",
-    "step": "10s"
+    "step": "10s",
+    "prometheusPort": 9090
   }' | jq .
 ```
 
@@ -456,10 +653,10 @@ curl -s -X POST http://localhost:8080/metrics \
 }
 ```
 
-### POST /metrics — benchmark not completed
+### POST /metrics/export — benchmark not completed
 
 ```bash
-curl -s -X POST http://localhost:8080/metrics | jq .
+curl -s -X POST http://localhost:8080/metrics/export | jq .
 ```
 
 **Expected response (409):**
@@ -469,6 +666,107 @@ curl -s -X POST http://localhost:8080/metrics | jq .
   "message": "Metrics collection is only available after the benchmark has completed",
   "context": {"current_status": "running"},
   "timestamp": "2026-06-10T14:35:00.000000+00:00"
+}
+```
+
+### POST /prometheus/tsdb/export
+
+```bash
+curl -s -X POST http://localhost:8080/prometheus/tsdb/export | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "s3Path": "run001/trial001/tsdb-snapshots",
+  "timestamp": "2026-06-10T14:42:00.000000+00:00"
+}
+```
+
+### POST /output/export
+
+```bash
+curl -s -X POST http://localhost:8080/output/export | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "message": "Output exported successfully",
+  "filesExported": 5,
+  "s3Prefix": "run001/trial001/output/",
+  "timestamp": "2026-06-10T14:43:00.000000+00:00"
+}
+```
+
+### POST /output/export/{role}
+
+```bash
+curl -s -X POST http://localhost:8080/output/export/trader | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "message": "Output exported successfully",
+  "filesExported": 1,
+  "s3Prefix": "run001/trial001/output/",
+  "timestamp": "2026-06-10T14:43:00.000000+00:00"
+}
+```
+
+### POST /db/export
+
+```bash
+curl -s -X POST http://localhost:8080/db/export | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "message": "Database export completed successfully",
+  "filesExported": 5,
+  "results": [
+    {"role": "back-office", "status": "success", "s3Key": "run001/trial001/db/back-office.db"},
+    {"role": "portfolio-manager", "status": "success", "s3Key": "run001/trial001/db/portfolio-manager.db"},
+    {"role": "trader", "status": "success", "s3Key": "run001/trial001/db/trader.db"},
+    {"role": "investor", "status": "success", "s3Key": "run001/trial001/db/investor.db"},
+    {"role": "it-operations", "status": "success", "s3Key": "run001/trial001/db/it-operations.db"}
+  ],
+  "timestamp": "2026-06-10T14:44:00.000000+00:00"
+}
+```
+
+### POST /metadata/export
+
+```bash
+curl -s -X POST http://localhost:8080/metadata/export | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "s3Key": "run001/trial001/run_details.json",
+  "timestamp": "2026-06-10T14:45:00.000000+00:00"
+}
+```
+
+### POST /shutdown
+
+```bash
+curl -s -X POST http://localhost:8080/shutdown | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "results": [
+    {"namespace": "globeco", "status": "success"},
+    {"namespace": "elasticsearch", "status": "success"},
+    {"namespace": "observability", "status": "success"},
+    {"namespace": "monitoring", "status": "success"}
+  ],
+  "timestamp": "2026-06-10T14:46:00.000000+00:00"
 }
 ```
 
@@ -518,16 +816,27 @@ curl -s "$RUNNER/status" | jq .
 
 echo ""
 echo "=== 6. Collect metrics ==="
-curl -s -X POST "$RUNNER/metrics" | jq .
+curl -s -X POST "$RUNNER/metrics/export" | jq .
 
 echo ""
-echo "=== 7. Download outputs ==="
-for ROLE in back-office portfolio-manager trader investor it-operations; do
-  echo "  Downloading output for $ROLE..."
-  curl -s "$RUNNER/output/$ROLE" > "${ROLE}-output.txt"
-  echo "  Downloading database for $ROLE..."
-  curl -s "$RUNNER/db/$ROLE" > "${ROLE}.db"
-done
+echo "=== 7. Export Prometheus TSDB snapshot ==="
+curl -s -X POST "$RUNNER/prometheus/tsdb/export" | jq .
+
+echo ""
+echo "=== 8. Export outputs to S3 ==="
+curl -s -X POST "$RUNNER/output/export" | jq .
+
+echo ""
+echo "=== 9. Export databases to S3 ==="
+curl -s -X POST "$RUNNER/db/export" | jq .
+
+echo ""
+echo "=== 10. Export metadata ==="
+curl -s -X POST "$RUNNER/metadata/export" | jq .
+
+echo ""
+echo "=== 11. Shutdown namespaces ==="
+curl -s -X POST "$RUNNER/shutdown" | jq .
 
 echo ""
 echo "=== Done ==="
@@ -603,10 +912,13 @@ kasbench-runner/
 │   │   ├── initialize.py            # POST /initialize
 │   │   ├── start.py                 # POST /start
 │   │   ├── status.py                # GET /status
-│   │   ├── output.py                # GET /output/{role}
-│   │   ├── db.py                    # GET /db/{role}
+│   │   ├── output.py                # GET /output/{role}, POST /output/export, POST /output/export/{role}
+│   │   ├── db.py                    # GET /db/{role}, POST /db/export, POST /db/export/{role}
 │   │   ├── abort.py                 # POST /abort
-│   │   └── metrics.py               # POST /metrics
+│   │   ├── metrics.py               # POST /metrics/export
+│   │   ├── prometheus_tsdb.py       # POST /prometheus/tsdb/export
+│   │   ├── metadata.py              # POST /metadata/export
+│   │   └── shutdown.py              # POST /shutdown
 │   └── services/
 │       ├── ssh_client.py            # Async SSH via asyncssh
 │       ├── docker_manager.py        # Docker CLI operations

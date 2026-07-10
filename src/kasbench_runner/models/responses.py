@@ -8,6 +8,58 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+# ---------------------------------------------------------------------------
+# Export-related response models
+# ---------------------------------------------------------------------------
+
+
+class ExportResultEntry(BaseModel):
+    """Per-role export result."""
+
+    role: str
+    status: str  # "success" or "failed"
+    s3_key: Optional[str] = Field(default=None, alias="s3Key")
+    error: Optional[str] = None
+
+    model_config = {"populate_by_name": True, "serialize_by_alias": True}
+
+
+class ExportResponse(BaseModel):
+    """Generic export response for output/db/metadata exports."""
+
+    message: str
+    files_exported: Optional[int] = Field(default=None, alias="filesExported")
+    results: Optional[list[ExportResultEntry]] = None
+    s3_prefix: Optional[str] = Field(default=None, alias="s3Prefix")
+    s3_key: Optional[str] = Field(default=None, alias="s3Key")
+    s3_path: Optional[str] = Field(default=None, alias="s3Path")
+    timestamp: datetime
+
+    model_config = {"populate_by_name": True, "serialize_by_alias": True}
+
+
+class NamespaceResult(BaseModel):
+    """Per-namespace shutdown result."""
+
+    namespace: str
+    status: str  # "deleted" or "failed"
+    error: Optional[str] = None
+
+
+class ShutdownResponse(BaseModel):
+    """POST /shutdown response."""
+
+    results: list[NamespaceResult]
+    timestamp: datetime
+
+    model_config = {"populate_by_name": True, "serialize_by_alias": True}
+
+
+# ---------------------------------------------------------------------------
+# Existing response models
+# ---------------------------------------------------------------------------
+
+
 class ErrorResponse(BaseModel):
     """Standard error response with full diagnostic context."""
 

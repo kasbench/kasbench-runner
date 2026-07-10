@@ -61,13 +61,16 @@ class PrometheusClient:
         self._connect_timeout = connect_timeout
         self._read_timeout = read_timeout
 
-    def build_url(self) -> str:
+    def build_url(self, port: int = 31565) -> str:
         """Return the Prometheus range query API URL.
 
+        Args:
+            port: Prometheus port number (default 31565).
+
         Returns:
-            URL in the format http://{control_plane_node}:31565/api/v1/query_range
+            URL in the format http://{control_plane_node}:{port}/api/v1/query_range
         """
-        return f"http://{self._control_plane_node}:31565/api/v1/query_range"
+        return f"http://{self._control_plane_node}:{port}/api/v1/query_range"
 
     def substitute_interval(self, query: str, interval: str) -> str:
         """Replace __INTERVAL__ placeholders with the interval value.
@@ -94,6 +97,7 @@ class PrometheusClient:
         end_ts: float,
         step: str,
         interval: str,
+        port: int = 31565,
     ) -> QuerySummary:
         """Execute all metric queries sequentially, accumulating results.
 
@@ -106,11 +110,12 @@ class PrometheusClient:
             end_ts: End time as Unix timestamp (seconds).
             step: Prometheus step duration string (e.g. "15s").
             interval: Interval value for __INTERVAL__ substitution.
+            port: Prometheus port number (default 31565).
 
         Returns:
             QuerySummary containing results for all attempted queries.
         """
-        url = self.build_url()
+        url = self.build_url(port)
         results: list[QueryResult] = []
 
         async with httpx.AsyncClient(

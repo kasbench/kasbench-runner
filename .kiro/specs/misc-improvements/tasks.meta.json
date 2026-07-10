@@ -1,0 +1,357 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Add Kafka counter and gauge metrics to metrics_config.py": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689570708
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689588156
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691088770
+      }
+    ],
+    "1.2 Update request models in models/requests.py": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689570781
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689589182
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691089702
+      }
+    ],
+    "1.3 Update PrometheusClient.build_url() to accept port parameter": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689570824
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689590382
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691090563
+      }
+    ],
+    "1.4 Add upload_bytes and upload_directory methods to S3Client": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689570863
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689591628
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691091402
+      }
+    ],
+    "1.5 Add response models to models/responses.py": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689570895
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689592666
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691092219
+      }
+    ],
+    "2.1 Rename POST /metrics to POST /metrics/export in routes/metrics.py": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689570922
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691101304
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691256843
+      }
+    ],
+    "3. Checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689570949
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691275098
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691594809
+      }
+    ],
+    "4.1 Add POST /output/export and POST /output/export/{role} to routes/output.py": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689570979
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691607279
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692073057
+      }
+    ],
+    "5.1 Add POST /db/export and POST /db/export/{role} to routes/db.py": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689571000
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691608246
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692073996
+      }
+    ],
+    "6. Checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689571021
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692081388
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692241752
+      }
+    ],
+    "7.1 Create routes/prometheus_tsdb.py with POST /prometheus/tsdb/export": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689571051
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691609169
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692074958
+      }
+    ],
+    "8.1 Create routes/metadata.py with POST /metadata/export": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689571072
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691609900
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692075758
+      }
+    ],
+    "9.1 Create routes/shutdown.py with POST /shutdown": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689571094
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691610752
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692076599
+      }
+    ],
+    "10.1 Update app.py to register new routers": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689571121
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692082332
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692242634
+      }
+    ],
+    "11. Checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689571149
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692246455
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692399734
+      }
+    ],
+    "12.1 Update README.md with all new and changed endpoints": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689571172
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692247329
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692400622
+      }
+    ],
+    "13. Final checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783689571198
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692404413
+      },
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692520330
+      }
+    ],
+    "1. Update models, services, and metrics config": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691092262
+      }
+    ],
+    "2. Rename metrics endpoint and add configurable port": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783691256872
+      }
+    ],
+    "4. Implement output export endpoint": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692073096
+      }
+    ],
+    "5. Implement database export endpoint": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692074031
+      }
+    ],
+    "7. Implement Prometheus TSDB snapshot export": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692074990
+      }
+    ],
+    "8. Implement metadata export endpoint": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692075790
+      }
+    ],
+    "9. Implement shutdown endpoint": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692076630
+      }
+    ],
+    "10. Register new routers and wire together": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692242669
+      }
+    ],
+    "12. Update README documentation": [
+      {
+        "executionId": "9562adba-be4f-4de5-9517-669363abe8f7",
+        "chatSessionId": "sess_4f352825-2c93-4f3d-a235-51f45e9d1856",
+        "timestamp": 1783692400662
+      }
+    ]
+  }
+}

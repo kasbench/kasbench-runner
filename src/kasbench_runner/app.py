@@ -18,7 +18,18 @@ from kasbench_runner.config import RunnerConfig
 from kasbench_runner.errors import RunnerError, build_error_response
 from kasbench_runner.logging import configure_logging
 from kasbench_runner.models.state import BenchmarkState
-from kasbench_runner.routes import abort, db, initialize, metrics, output, start, status
+from kasbench_runner.routes import (
+    abort,
+    db,
+    initialize,
+    metadata,
+    metrics,
+    output,
+    prometheus_tsdb,
+    shutdown,
+    start,
+    status,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -74,6 +85,9 @@ def create_app() -> FastAPI:
     app.include_router(db.router)
     app.include_router(abort.router)
     app.include_router(metrics.router)
+    app.include_router(prometheus_tsdb.router)
+    app.include_router(metadata.router)
+    app.include_router(shutdown.router)
 
     # Register global exception handler for RunnerError
     @app.exception_handler(RunnerError)
