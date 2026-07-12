@@ -30,6 +30,8 @@ initialize → start → monitor → collect results
 - **Load Generator Client** (httpx) — HTTP communication with 5 load generators
 - **S3 Client** (boto3) — Trial reservation and artifact upload
 - **Health Checker** — Configurable retry-based health polling
+- **Rollout Monitor** (kr8s) — Deployment rollout polling with unrecoverable condition detection
+- **Snapshot Collector** (kr8s) — Comprehensive cluster state collection and S3 upload
 
 ## Prerequisites
 
@@ -103,6 +105,7 @@ All configuration is via environment variables. Invalid numeric values fall back
 | `HTTP_CONNECT_TIMEOUT` | `10` | HTTP client connect timeout (seconds) |
 | `HTTP_READ_TIMEOUT` | `30` | HTTP client read timeout (seconds) |
 | `MANIFEST_FETCH_TIMEOUT` | `30` | Timeout for fetching k8s.lst files |
+| `ROLLOUT_DEPLOYMENTS` | 24 default deployments | JSON array of `{"name": "...", "namespace": "..."}` objects defining deployments for `/rollout/all` |
 
 ## API Reference
 
@@ -411,6 +414,128 @@ Each namespace deletion waits up to 60 seconds. If a deletion fails or times out
 | `409` | `benchmark_running` | Benchmark is currently running; shutdown is not permitted |
 
 **Allowed States:** `not-started`, `success`, `failed`, `aborted`
+
+---
+
+### POST /rollout/wait
+
+Wait for a single Kubernetes deployment rollout to complete.
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `deploymentName` | string | yes | Name of the deployment (1–253 characters) |
+| `namespace` | string | yes | Kubernetes namespace (1–63 characters) |
+| `timeout` | int | yes | Maximum wait time in seconds (1–1800) |
+
+**Request Example:**
+
+```json
+{
+  "deploymentName": "my-service",
+  "namespace": "default",
+  "timeout": 300
+}
+```
+
+**Success Response (200):**
+
+```json
+{
+  "deploymentName": "my-service",
+  "namespace": "default",
+  "elapsedSeconds": 45.2
+}
+```
+
+**Error Responses:**
+
+| Status | Error | Condition |
+|--------|-------|-----------|
+| `404` | `deployment_not_found` | Deployment does not exist in the given namespace |
+| `422` | Validation error | Invalid input parameters (missing, empty, or out of range) |
+| `500` | `rollout_timeout` | Timeout elapsed before rollout completed |
+| `500` | `rollout_unrecoverable` | Deployment entered an unrecoverable state (e.g., ProgressDeadlineExceeded, CrashLoopBackOff) |
+| `500` | `kubernetes_api_error` | Kubernetes API unreachable or returned an error |
+
+---
+
+### POST /rollout/all
+
+Wait for all configured deployments to complete their rollouts.
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `timeout` | int | yes | Maximum total wait time in seconds (1–3600) |
+
+**Request Example:**
+
+```json
+{
+  "timeout": 600
+}
+```
+
+**Success Response (200):**
+
+```json
+{
+  "deploymentsChecked": 24,
+  "elapsedSeconds": 120.5
+}
+```
+
+**Error Responses:**
+
+| Status | Error | Condition |
+|--------|-------|-----------|
+| `422` | Validation error | Invalid timeout value (missing or out of range 1–3600) |
+| `500` | `rollout_timeout` | Timeout elapsed; response lists incomplete deployments |
+| `500` | `rollout_unrecoverable` | A deployment entered an unrecoverable state |
+| `500` | `kubernetes_api_error` | Kubernetes API unreachable or returned an error |
+
+---
+
+### POST /snapshot
+
+Collect a comprehensive cluster state snapshot and upload to S3.
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `phase` | string | yes | Must be `"pre"` or `"post"` |
+
+**Request Example:**
+
+```json
+{
+  "phase": "pre"
+}
+```
+
+**Success Response (200):**
+
+```json
+{
+  "phase": "pre",
+  "filesUploaded": 25,
+  "s3Prefix": "run001/trial001/snapshot/pre"
+}
+```
+
+**Error Responses:**
+
+| Status | Error | Condition |
+|--------|-------|-----------|
+| `409` | `not_initialized` | Benchmark has not been initialized |
+| `409` | `snapshot_in_progress` | A snapshot operation is already running |
+| `422` | Validation error | Phase value is not `"pre"` or `"post"` |
+| `500` | `kubernetes_error` | Kubernetes API call failed during collection |
+| `500` | `s3_operation_failed` | S3 upload failed |
 
 ---
 
@@ -770,6 +895,75 @@ curl -s -X POST http://localhost:8080/shutdown | jq .
 }
 ```
 
+### POST /rollout/wait
+
+```bash
+# Wait for a single deployment rollout
+curl -s -X POST http://localhost:8080/rollout/wait \
+  -H "Content-Type: application/json" \
+  -d '{"deploymentName": "my-service", "namespace": "default", "timeout": 300}' | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "deploymentName": "my-service",
+  "namespace": "default",
+  "elapsedSeconds": 45.2
+}
+```
+
+### POST /rollout/all
+
+```bash
+# Wait for all configured deployments to roll out
+curl -s -X POST http://localhost:8080/rollout/all \
+  -H "Content-Type: application/json" \
+  -d '{"timeout": 600}' | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "deploymentsChecked": 24,
+  "elapsedSeconds": 120.5
+}
+```
+
+### POST /snapshot
+
+```bash
+# Take pre-benchmark snapshot
+curl -s -X POST http://localhost:8080/snapshot \
+  -H "Content-Type: application/json" \
+  -d '{"phase": "pre"}' | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "phase": "pre",
+  "filesUploaded": 25,
+  "s3Prefix": "run001/trial001/snapshot/pre"
+}
+```
+
+```bash
+# Take post-benchmark snapshot
+curl -s -X POST http://localhost:8080/snapshot \
+  -H "Content-Type: application/json" \
+  -d '{"phase": "post"}' | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "phase": "post",
+  "filesUploaded": 25,
+  "s3Prefix": "run001/trial001/snapshot/post"
+}
+```
+
 ### Full Lifecycle Script
 
 ```bash
@@ -796,11 +990,23 @@ curl -s -X POST "$RUNNER/initialize" \
   }' | jq .
 
 echo ""
-echo "=== 3. Start benchmark ==="
+echo "=== 3. Wait for all deployments to roll out ==="
+curl -s -X POST "$RUNNER/rollout/all" \
+  -H "Content-Type: application/json" \
+  -d '{"timeout": 600}' | jq .
+
+echo ""
+echo "=== 4. Take pre-benchmark snapshot ==="
+curl -s -X POST "$RUNNER/snapshot" \
+  -H "Content-Type: application/json" \
+  -d '{"phase": "pre"}' | jq .
+
+echo ""
+echo "=== 5. Start benchmark ==="
 curl -s -X POST "$RUNNER/start" | jq .
 
 echo ""
-echo "=== 4. Poll status until complete ==="
+echo "=== 6. Poll status until complete ==="
 while true; do
   STATUS=$(curl -s "$RUNNER/status" | jq -r '.status')
   echo "  Status: $STATUS"
@@ -811,31 +1017,37 @@ while true; do
 done
 
 echo ""
-echo "=== 5. Final status ==="
+echo "=== 7. Final status ==="
 curl -s "$RUNNER/status" | jq .
 
 echo ""
-echo "=== 6. Collect metrics ==="
+echo "=== 8. Take post-benchmark snapshot ==="
+curl -s -X POST "$RUNNER/snapshot" \
+  -H "Content-Type: application/json" \
+  -d '{"phase": "post"}' | jq .
+
+echo ""
+echo "=== 9. Collect metrics ==="
 curl -s -X POST "$RUNNER/metrics/export" | jq .
 
 echo ""
-echo "=== 7. Export Prometheus TSDB snapshot ==="
+echo "=== 10. Export Prometheus TSDB snapshot ==="
 curl -s -X POST "$RUNNER/prometheus/tsdb/export" | jq .
 
 echo ""
-echo "=== 8. Export outputs to S3 ==="
+echo "=== 11. Export outputs to S3 ==="
 curl -s -X POST "$RUNNER/output/export" | jq .
 
 echo ""
-echo "=== 9. Export databases to S3 ==="
+echo "=== 12. Export databases to S3 ==="
 curl -s -X POST "$RUNNER/db/export" | jq .
 
 echo ""
-echo "=== 10. Export metadata ==="
+echo "=== 13. Export metadata ==="
 curl -s -X POST "$RUNNER/metadata/export" | jq .
 
 echo ""
-echo "=== 11. Shutdown namespaces ==="
+echo "=== 14. Shutdown namespaces ==="
 curl -s -X POST "$RUNNER/shutdown" | jq .
 
 echo ""
@@ -918,7 +1130,9 @@ kasbench-runner/
 │   │   ├── metrics.py               # POST /metrics/export
 │   │   ├── prometheus_tsdb.py       # POST /prometheus/tsdb/export
 │   │   ├── metadata.py              # POST /metadata/export
-│   │   └── shutdown.py              # POST /shutdown
+│   │   ├── shutdown.py              # POST /shutdown
+│   │   ├── rollout.py               # POST /rollout/wait, POST /rollout/all
+│   │   └── snapshot.py              # POST /snapshot
 │   └── services/
 │       ├── ssh_client.py            # Async SSH via asyncssh
 │       ├── docker_manager.py        # Docker CLI operations
@@ -928,7 +1142,9 @@ kasbench-runner/
 │       ├── s3_client.py             # S3 reservation + upload
 │       ├── metrics_config.py        # Prometheus metric definitions
 │       ├── prometheus_client.py     # Prometheus range query client
-│       └── health_checker.py        # Retry-based health polling
+│       ├── health_checker.py        # Retry-based health polling
+│       ├── rollout_monitor.py       # Deployment rollout monitoring
+│       └── snapshot_collector.py    # Cluster state snapshot collection
 └── tests/                           # Test suite
 ```
 

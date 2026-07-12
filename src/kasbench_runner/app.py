@@ -26,7 +26,9 @@ from kasbench_runner.routes import (
     metrics,
     output,
     prometheus_tsdb,
+    rollout,
     shutdown,
+    snapshot,
     start,
     status,
 )
@@ -88,6 +90,8 @@ def create_app() -> FastAPI:
     app.include_router(prometheus_tsdb.router)
     app.include_router(metadata.router)
     app.include_router(shutdown.router)
+    app.include_router(rollout.router)
+    app.include_router(snapshot.router)
 
     # Register global exception handler for RunnerError
     @app.exception_handler(RunnerError)

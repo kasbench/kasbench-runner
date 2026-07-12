@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -57,3 +59,31 @@ class TsdbExportRequest(BaseModel):
     prometheus_port: int = Field(default=31565, alias="prometheusPort", ge=1, le=65535)
 
     model_config = {"extra": "ignore", "populate_by_name": True}
+
+
+class RolloutWaitRequest(BaseModel):
+    """POST /rollout/wait request body."""
+
+    deployment_name: str = Field(
+        ..., alias="deploymentName", min_length=1, max_length=253
+    )
+    namespace: str = Field(..., alias="namespace", min_length=1, max_length=63)
+    timeout: int = Field(..., ge=1, le=1800)
+
+    model_config = {"populate_by_name": True}
+
+
+class RolloutAllRequest(BaseModel):
+    """POST /rollout/all request body."""
+
+    timeout: int = Field(..., ge=1, le=3600)
+
+    model_config = {"populate_by_name": True}
+
+
+class SnapshotRequest(BaseModel):
+    """POST /snapshot request body."""
+
+    phase: Literal["pre", "post"]
+
+    model_config = {"populate_by_name": True}

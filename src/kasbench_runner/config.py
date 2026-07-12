@@ -6,11 +6,12 @@ Invalid numeric values fall back to defaults with a WARNING log.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
 import structlog
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 logger = structlog.get_logger()
@@ -24,6 +25,50 @@ _RANGE_VALIDATED_FIELDS: dict[str, tuple[int, int, int]] = {
     "HEALTH_CHECK_MAX_ATTEMPTS": (3, 1, 10),
     "HEALTH_CHECK_INTERVAL_SECONDS": (5, 1, 60),
 }
+
+
+@dataclass(frozen=True)
+class DeploymentSpec:
+    """Identifies a Kubernetes Deployment to monitor."""
+
+    name: str
+    namespace: str
+
+
+# ---------------------------------------------------------------------------
+# Default deployment list for /rollout/all
+# Loaded from ROLLOUT_DEPLOYMENTS env var (JSON) or defaults below
+# ---------------------------------------------------------------------------
+DEFAULT_ROLLOUT_DEPLOYMENTS: list[dict[str, str]] = [
+    # elasticsearch namespace (1)
+    {"name": "elasticsearch", "namespace": "elasticsearch"},
+    # globeco namespace (12)
+    {"name": "globeco-allocation-service", "namespace": "globeco"},
+    {"name": "globeco-confirmation-service", "namespace": "globeco"},
+    {"name": "globeco-execution-service", "namespace": "globeco"},
+    {"name": "globeco-fix-engine", "namespace": "globeco"},
+    {"name": "globeco-order-generation-service", "namespace": "globeco"},
+    {"name": "globeco-order-service", "namespace": "globeco"},
+    {"name": "globeco-portfolio-accounting-service", "namespace": "globeco"},
+    {"name": "globeco-portfolio-management-portal", "namespace": "globeco"},
+    {"name": "globeco-portfolio-service", "namespace": "globeco"},
+    {"name": "globeco-pricing-service", "namespace": "globeco"},
+    {"name": "globeco-security-service", "namespace": "globeco"},
+    {"name": "globeco-trade-service", "namespace": "globeco"},
+    # kube-system namespace (3)
+    {"name": "coredns", "namespace": "kube-system"},
+    {"name": "ebs-csi-controller", "namespace": "kube-system"},
+    {"name": "metrics-server", "namespace": "kube-system"},
+    # monitoring namespace (5)k
+    {"name": "otel-collector", "namespace": "monitoring"},
+    {"name": "prometheus-server", "namespace": "monitoring"},
+    {"name": "prometheus-kube-state-metrics", "namespace": "monitoring"},
+    {"name": "prometheus-prometheus-pushgateway", "namespace": "monitoring"},
+    # observability namespace (1)
+    {"name": "jaeger", "namespace": "observability"},
+    # opentelemetry-operator-system namespace (1)
+    {"name": "opentelemetry-operator-controller-manager", "namespace": "opentelemetry-operator-system"},
+]
 
 
 class RunnerConfig(BaseSettings):
@@ -55,7 +100,10 @@ class RunnerConfig(BaseSettings):
     # Manifest fetching
     manifest_fetch_timeout: int = 30
 
-    model_config = {"env_prefix": "", "case_sensitive": False}
+    # Rollout configuration
+    rollout_deployments_json: str = Field(default="", alias="ROLLOUT_DEPLOYMENTS")
+
+    model_config = {"env_prefix": "", "case_sensitive": False, "populate_by_name": True}
 
     @model_validator(mode="before")
     @classmethod
@@ -102,6 +150,20 @@ class RunnerConfig(BaseSettings):
                 continue
 
         return values
+
+    @property
+    def rollout_deployments(self) -> list[DeploymentSpec]:
+        """Parse deployment list from JSON env var or use defaults."""
+        if self.rollout_deployments_json:
+            parsed = json.loads(self.rollout_deployments_json)
+            return [
+                DeploymentSpec(name=d["name"], namespace=d["namespace"])
+                for d in parsed
+            ]
+        return [
+            DeploymentSpec(name=d["name"], namespace=d["namespace"])
+            for d in DEFAULT_ROLLOUT_DEPLOYMENTS
+        ]
 
 
 # ---------------------------------------------------------------------------

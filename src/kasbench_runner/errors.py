@@ -70,6 +70,81 @@ class ManifestError(RunnerError):
         )
 
 
+class RolloutTimeoutError(RunnerError):
+    """Deployment rollout timed out."""
+
+    def __init__(self, deployment_name: str, namespace: str, elapsed_seconds: float):
+        super().__init__(
+            error="rollout_timeout",
+            message=f"Rollout timed out for {namespace}/{deployment_name} after {elapsed_seconds:.1f}s",
+            deployment_name=deployment_name,
+            namespace=namespace,
+            elapsed_seconds=elapsed_seconds,
+        )
+
+
+class RolloutUnrecoverableError(RunnerError):
+    """Deployment encountered an unrecoverable condition."""
+
+    def __init__(self, deployment_name: str, namespace: str, reason: str, **kwargs):
+        super().__init__(
+            error="rollout_unrecoverable",
+            message=f"Unrecoverable condition for {namespace}/{deployment_name}: {reason}",
+            deployment_name=deployment_name,
+            namespace=namespace,
+            reason=reason,
+            **kwargs,
+        )
+
+
+class DeploymentNotFoundError(RunnerError):
+    """Deployment does not exist in the specified namespace."""
+
+    def __init__(self, deployment_name: str, namespace: str):
+        super().__init__(
+            error="deployment_not_found",
+            message=f"Deployment '{deployment_name}' not found in namespace '{namespace}'",
+            deployment_name=deployment_name,
+            namespace=namespace,
+        )
+
+
+class KubernetesApiError(RunnerError):
+    """Kubernetes API unreachable or returned unexpected error."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            error="kubernetes_api_error",
+            message=message,
+            **kwargs,
+        )
+
+
+class SnapshotCollectionError(RunnerError):
+    """Required Kubernetes resource collection failed."""
+
+    def __init__(self, resource: str, exception_class: str, exception_message: str):
+        super().__init__(
+            error="kubernetes_error",
+            message=f"Failed to collect {resource}: {exception_class}: {exception_message}",
+            resource=resource,
+            exception_class=exception_class,
+            exception_message=exception_message,
+        )
+
+
+class InvalidPhaseError(RunnerError):
+    """Invalid snapshot phase value."""
+
+    def __init__(self, phase: str):
+        super().__init__(
+            error="invalid_phase",
+            message=f"Invalid phase '{phase}'. Allowed values: 'pre', 'post'",
+            phase=phase,
+            allowed_values=["pre", "post"],
+        )
+
+
 def build_error_response(
     error: str,
     message: str,

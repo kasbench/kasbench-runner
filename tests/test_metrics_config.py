@@ -14,8 +14,8 @@ from kasbench_runner.services.metrics_config import (
 
 
 def test_counter_metrics_count():
-    """COUNTER_METRICS should have exactly 43 entries (36 original + 7 Kafka)."""
-    assert len(COUNTER_METRICS) == 43
+    """COUNTER_METRICS should have exactly 43 entries."""
+    assert len(COUNTER_METRICS) == 47
 
 
 def test_gauge_metrics_count():
@@ -24,8 +24,8 @@ def test_gauge_metrics_count():
 
 
 def test_all_metrics_count():
-    """ALL_METRICS should have exactly 70 entries (43 + 27)."""
-    assert len(ALL_METRICS) == 70
+    """ALL_METRICS should have exactly 74 entries."""
+    assert len(ALL_METRICS) == 74
 
 
 def test_all_metrics_is_concatenation():

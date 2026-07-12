@@ -36,6 +36,9 @@ class BenchmarkState:
     globeco_installed: bool = False
     load_generators_installed: bool = False
 
+    # Snapshot concurrency guard
+    snapshot_in_progress: bool = False
+
     @property
     def initialization_complete(self) -> bool:
         """True when all installation steps have completed successfully."""

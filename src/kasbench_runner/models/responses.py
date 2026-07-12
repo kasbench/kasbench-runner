@@ -133,3 +133,37 @@ class MetricsResponse(BaseModel):
     timestamp: datetime
 
     model_config = {"populate_by_name": True, "serialize_by_alias": True}
+
+
+# ---------------------------------------------------------------------------
+# Rollout and Snapshot response models
+# ---------------------------------------------------------------------------
+
+
+class RolloutWaitResponse(BaseModel):
+    """POST /rollout/wait success response."""
+
+    deployment_name: str = Field(alias="deploymentName")
+    namespace: str
+    elapsed_seconds: float = Field(alias="elapsedSeconds")
+
+    model_config = {"populate_by_name": True, "serialize_by_alias": True}
+
+
+class RolloutAllResponse(BaseModel):
+    """POST /rollout/all success response."""
+
+    deployments_checked: int = Field(alias="deploymentsChecked")
+    elapsed_seconds: float = Field(alias="elapsedSeconds")
+
+    model_config = {"populate_by_name": True, "serialize_by_alias": True}
+
+
+class SnapshotResponse(BaseModel):
+    """POST /snapshot success response."""
+
+    phase: str
+    files_uploaded: int = Field(alias="filesUploaded")
+    s3_prefix: str = Field(alias="s3Prefix")
+
+    model_config = {"populate_by_name": True, "serialize_by_alias": True}

@@ -6,32 +6,32 @@ This plan implements two new services (RolloutMonitor and SnapshotCollector) and
 
 ## Tasks
 
-- [ ] 1. Add error classes and data models
-  - [ ] 1.1 Add rollout and snapshot error classes to `src/kasbench_runner/errors.py`
+- [x] 1. Add error classes and data models
+  - [x] 1.1 Add rollout and snapshot error classes to `src/kasbench_runner/errors.py`
     - Add `RolloutTimeoutError`, `RolloutUnrecoverableError`, `DeploymentNotFoundError`, `KubernetesApiError`, `SnapshotCollectionError`, `InvalidPhaseError`
     - Each error must follow the existing `RunnerError` pattern with `error`, `message`, and `**context`
     - _Requirements: 1.3, 1.4, 1.5, 1.9, 3.14, 3.16_
 
-  - [ ] 1.2 Add request and response models
+  - [x] 1.2 Add request and response models
     - Add `RolloutWaitRequest`, `RolloutAllRequest`, `SnapshotRequest` to `src/kasbench_runner/models/requests.py`
     - Add `RolloutWaitResponse`, `RolloutAllResponse`, `SnapshotResponse` to `src/kasbench_runner/models/responses.py`
     - Use Pydantic `Field` with validation constraints (min_length, max_length, ge, le, Literal)
     - Use `populate_by_name: True` and `serialize_by_alias: True` for camelCase serialization
     - _Requirements: 4.1, 4.5, 4.6, 5.1, 5.5, 6.1, 6.5_
 
-  - [ ] 1.3 Add `snapshot_in_progress` field to `BenchmarkState` in `src/kasbench_runner/models/state.py`
+  - [x] 1.3 Add `snapshot_in_progress` field to `BenchmarkState` in `src/kasbench_runner/models/state.py`
     - Add `snapshot_in_progress: bool = False` to the `BenchmarkState` dataclass
     - _Requirements: 6.7_
 
-  - [ ] 1.4 Add rollout deployment configuration to `src/kasbench_runner/config.py`
+  - [x] 1.4 Add rollout deployment configuration to `src/kasbench_runner/config.py`
     - Add `DEFAULT_ROLLOUT_DEPLOYMENTS` list constant with 24 deployments across namespaces
     - Add `rollout_deployments_json` field to `RunnerConfig` mapped to `ROLLOUT_DEPLOYMENTS` env var
     - Add a `rollout_deployments` property that parses JSON or returns defaults as `DeploymentSpec` objects
     - Import `DeploymentSpec` from the rollout monitor module (or define inline dataclass)
     - _Requirements: 5.2, 5.6_
 
-- [ ] 2. Implement RolloutMonitor service
-  - [ ] 2.1 Create `src/kasbench_runner/services/rollout_monitor.py` with the `RolloutMonitor` class
+- [x] 2. Implement RolloutMonitor service
+  - [x] 2.1 Create `src/kasbench_runner/services/rollout_monitor.py` with the `RolloutMonitor` class
     - Define `DeploymentSpec` dataclass (frozen, with `name` and `namespace`)
     - Implement `_fetch_deployment_with_retry` with 3 retries and 15s delay for transient errors (connection refused, timeout, HTTP 5xx)
     - Implement `_is_rollout_complete` checking updatedReplicas == replicas, readyReplicas == replicas, and Progressing condition reason "NewReplicaSetAvailable"
@@ -63,7 +63,7 @@ This plan implements two new services (RolloutMonitor and SnapshotCollector) and
     - Generate random sequences of success/transient-error responses (length 1-5), verify retry behavior matches spec
     - **Validates: Requirements 1.6**
 
-  - [ ] 2.6 Implement `wait_for_all_rollouts` in `RolloutMonitor`
+  - [x] 2.6 Implement `wait_for_all_rollouts` in `RolloutMonitor`
     - Use `asyncio.wait` with `return_when=FIRST_EXCEPTION` and shared timeout
     - Cancel all pending tasks on first failure
     - Return successfully immediately for empty deployment list
@@ -80,11 +80,11 @@ This plan implements two new services (RolloutMonitor and SnapshotCollector) and
     - Generate random batches with random subsets completing, verify error lists exactly the incomplete ones
     - **Validates: Requirements 2.5**
 
-- [ ] 3. Checkpoint - Ensure all tests pass
+- [x] 3. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Implement SnapshotCollector service
-  - [ ] 4.1 Create `src/kasbench_runner/services/snapshot_collector.py` with the `SnapshotCollector` class
+- [x] 4. Implement SnapshotCollector service
+  - [x] 4.1 Create `src/kasbench_runner/services/snapshot_collector.py` with the `SnapshotCollector` class
     - Define `SnapshotResult` dataclass (frozen, with `files_uploaded: int` and `s3_prefix: str`)
     - Accept `S3Client` in constructor
     - Implement `_prepend_header` to prepend ISO 8601 UTC timestamp and resource label to content
@@ -93,26 +93,26 @@ This plan implements two new services (RolloutMonitor and SnapshotCollector) and
     - Validate phase is "pre" or "post", raising `InvalidPhaseError` otherwise
     - _Requirements: 3.1, 3.9, 3.10, 3.11, 3.12, 3.16_
 
-  - [ ] 4.2 Implement metadata collection in `SnapshotCollector`
+  - [x] 4.2 Implement metadata collection in `SnapshotCollector`
     - Implement `_collect_metadata` gathering: date.txt (UTC timestamp), kubectl-version.yaml (server version info), context.txt (current context), cluster-info.txt (cluster endpoint), api-resources.txt (available API resources)
     - Use kr8s async API calls
     - Raise `SnapshotCollectionError` on failure
     - _Requirements: 3.2, 3.11, 3.14_
 
-  - [ ] 4.3 Implement resource collection in `SnapshotCollector`
+  - [x] 4.3 Implement resource collection in `SnapshotCollector`
     - Implement `_collect_resources` gathering all required resource manifests: nodes, pods, pods-wide, workloads (deployments, statefulsets, daemonsets, replicasets, jobs, cronjobs), autoscaling (HPAs), network (services, endpoints, endpointslices, ingresses, networkpolicies), storage (PVCs, PVs, storageclasses, volumeattachments), policies (resourcequotas, limitranges, poddisruptionbudgets), configmaps, webhooks
     - Serialize to YAML format where applicable, text for pods-wide
     - Raise `SnapshotCollectionError` on failure for required resources
     - _Requirements: 3.3, 3.11, 3.14_
 
-  - [ ] 4.4 Implement descriptions, events, raw endpoints, and optional CRDs collection
+  - [x] 4.4 Implement descriptions, events, raw endpoints, and optional CRDs collection
     - Implement `_collect_descriptions` for nodes and pods detailed output
     - Implement `_collect_events` for all events and warning-only events
     - Implement `_collect_raw_endpoints` for /readyz, /livez, node-metrics, pod-metrics
     - Implement `_collect_optional_crds` for VPA, KEDA, Gateway API resources — log warning and continue on failure
     - _Requirements: 3.4, 3.5, 3.6, 3.7, 3.8, 3.14, 3.15_
 
-  - [ ] 4.5 Implement S3 upload logic in `collect_snapshot`
+  - [x] 4.5 Implement S3 upload logic in `collect_snapshot`
     - Upload all files to S3 under `{run_id}/{trial_id}/snapshot/{phase}/` prefix
     - Upload SHA256SUMS last as completeness indicator
     - Raise `S3OperationError` on failure for required files
@@ -145,11 +145,11 @@ This plan implements two new services (RolloutMonitor and SnapshotCollector) and
     - Generate random subsets of optional resources to fail, verify snapshot still completes
     - **Validates: Requirements 3.7, 3.15**
 
-- [ ] 5. Checkpoint - Ensure all tests pass
+- [x] 5. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. Implement REST API routes
-  - [ ] 6.1 Create `src/kasbench_runner/routes/rollout.py` with `/rollout/wait` and `/rollout/all` endpoints
+- [x] 6. Implement REST API routes
+  - [x] 6.1 Create `src/kasbench_runner/routes/rollout.py` with `/rollout/wait` and `/rollout/all` endpoints
     - Create `APIRouter` with rollout endpoints
     - `POST /rollout/wait`: validate request via `RolloutWaitRequest`, instantiate `RolloutMonitor`, call `wait_for_rollout`, return `RolloutWaitResponse` with deployment name and elapsed time
     - Handle `DeploymentNotFoundError` → 404, `RolloutTimeoutError` → 500, `RolloutUnrecoverableError` → 500, `KubernetesApiError` → 500
@@ -157,13 +157,13 @@ This plan implements two new services (RolloutMonitor and SnapshotCollector) and
     - Handle timeout and unrecoverable errors → 500 with deployment details
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6_
 
-  - [ ] 6.2 Create `src/kasbench_runner/routes/snapshot.py` with `/snapshot` endpoint
+  - [x] 6.2 Create `src/kasbench_runner/routes/snapshot.py` with `/snapshot` endpoint
     - Create `APIRouter` with snapshot endpoint
     - `POST /snapshot`: validate `SnapshotRequest`, check benchmark is initialized (else 409), check `snapshot_in_progress` (else 409), set flag, instantiate `SnapshotCollector` with S3Client, call `collect_snapshot`, reset flag in `finally` block, return `SnapshotResponse`
     - Handle `InvalidPhaseError` → 422, `SnapshotCollectionError` → 500, `S3OperationError` → 500
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7_
 
-  - [ ] 6.3 Register new routers in `src/kasbench_runner/app.py`
+  - [x] 6.3 Register new routers in `src/kasbench_runner/app.py`
     - Import `rollout` and `snapshot` route modules
     - Add `app.include_router(rollout.router)` and `app.include_router(snapshot.router)`
     - _Requirements: 4.1, 5.1, 6.1_
@@ -193,11 +193,11 @@ This plan implements two new services (RolloutMonitor and SnapshotCollector) and
     - Generate invalid timeout values and empty names, verify 422 responses with appropriate messages
     - **Validates: Requirements 4.5, 4.6, 5.5**
 
-- [ ] 7. Checkpoint - Ensure all tests pass
+- [x] 7. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Update README.md with rollout and snapshot feature documentation
-  - [ ] 8.1 Update `README.md` with new endpoints, services, configuration, and project structure
+- [x] 8. Update README.md with rollout and snapshot feature documentation
+  - [x] 8.1 Update `README.md` with new endpoints, services, configuration, and project structure
     - Add `ROLLOUT_DEPLOYMENTS` environment variable to the Configuration table
     - Add `POST /rollout/wait` endpoint documentation with request/response schema and error codes
     - Add `POST /rollout/all` endpoint documentation with request/response schema and error codes
@@ -208,7 +208,7 @@ This plan implements two new services (RolloutMonitor and SnapshotCollector) and
     - Update the Full Lifecycle Script to include snapshot and rollout steps
     - _Requirements: all_
 
-- [ ] 9. Final checkpoint - Ensure all tests pass
+- [x] 9. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
