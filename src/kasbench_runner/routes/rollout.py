@@ -76,12 +76,14 @@ async def wait_for_rollout(
 async def wait_for_all_rollouts(
     request: Request, body: RolloutAllRequest
 ) -> RolloutAllResponse:
-    """Wait for all configured deployments to roll out."""
+    """Wait for all configured deployments and statefulsets to roll out."""
     config = request.app.state.config
     deployments = config.rollout_deployments
+    statefulsets = config.rollout_statefulsets
 
     log = logger.bind(
         deployment_count=len(deployments),
+        statefulset_count=len(statefulsets),
         timeout=body.timeout,
     )
     log.info("rollout_all_start")
@@ -90,15 +92,16 @@ async def wait_for_all_rollouts(
     start_time = time.monotonic()
 
     try:
-        await monitor.wait_for_all_rollouts(deployments, body.timeout)
+        await monitor.wait_for_all_rollouts(deployments, body.timeout, statefulsets=statefulsets)
         elapsed = time.monotonic() - start_time
+        total_checked = len(deployments) + len(statefulsets)
         log.info(
             "rollout_all_complete",
-            deployments_checked=len(deployments),
+            deployments_checked=total_checked,
             elapsed_seconds=round(elapsed, 1),
         )
         return RolloutAllResponse(
-            deployments_checked=len(deployments),
+            deployments_checked=total_checked,
             elapsed_seconds=elapsed,
         )
     except (RolloutTimeoutError, RolloutUnrecoverableError, KubernetesApiError) as exc:

@@ -9,6 +9,7 @@ Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10,
 """
 
 import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -23,6 +24,19 @@ from kasbench_runner.errors import (
 from kasbench_runner.services.s3_client import S3Client, S3OperationError
 
 logger = structlog.get_logger()
+
+
+def _to_plain_dict(obj) -> dict:
+    """Convert a kr8s raw object (possibly a Box) to a plain dict for clean YAML serialization.
+
+    Uses JSON round-trip to deeply convert all nested Box objects to plain Python types.
+    This is necessary because Box.to_dict() only performs shallow conversion.
+    """
+    if hasattr(obj, "to_dict"):
+        # Use to_dict first, then JSON round-trip to handle nested Box objects
+        as_dict = obj.to_dict()
+        return json.loads(json.dumps(as_dict, default=str))
+    return json.loads(json.dumps(obj, default=str))
 
 
 @dataclass(frozen=True)
@@ -180,7 +194,8 @@ class SnapshotCollector:
         # kubectl-version.yaml - server version info
         try:
             version = await api.version()
-            version_yaml = yaml.dump(version, default_flow_style=False)
+            version_data = _to_plain_dict(version) if hasattr(version, "to_dict") else version
+            version_yaml = yaml.dump(version_data, default_flow_style=False)
             files["metadata/kubectl-version.yaml"] = version_yaml.encode("utf-8")
         except Exception as exc:
             raise SnapshotCollectionError(
@@ -189,10 +204,12 @@ class SnapshotCollector:
                 exception_message=str(exc),
             ) from exc
 
-        # context.txt - current context name
+        # context.txt - current context/server URL
         try:
-            context_name = api._url or "unknown"
-            files["metadata/context.txt"] = str(context_name).encode("utf-8")
+            # Get server URL from the version endpoint response URL
+            async with api.call_api("GET", base="/version", version="") as response:
+                server_url = str(response.url).rsplit("/version", 1)[0]
+            files["metadata/context.txt"] = server_url.encode("utf-8")
         except Exception as exc:
             raise SnapshotCollectionError(
                 resource="metadata/context.txt",
@@ -202,7 +219,7 @@ class SnapshotCollector:
 
         # cluster-info.txt - cluster endpoint
         try:
-            cluster_info = f"Kubernetes control plane: {api._url or 'unknown'}"
+            cluster_info = f"Kubernetes control plane: {server_url}"
             files["metadata/cluster-info.txt"] = cluster_info.encode("utf-8")
         except Exception as exc:
             raise SnapshotCollectionError(
@@ -259,7 +276,7 @@ class SnapshotCollector:
         # nodes.yaml
         try:
             nodes = [n async for n in api.get("nodes")]
-            nodes_data = [n.raw for n in nodes]
+            nodes_data = [_to_plain_dict(n.raw) for n in nodes]
             files["resources/nodes.yaml"] = yaml.dump(
                 {"items": nodes_data}, default_flow_style=False
             ).encode("utf-8")
@@ -273,7 +290,7 @@ class SnapshotCollector:
         # pods.yaml
         try:
             pods = [p async for p in api.get("pods", namespace=kr8s.ALL)]
-            pods_data = [p.raw for p in pods]
+            pods_data = [_to_plain_dict(p.raw) for p in pods]
             files["resources/pods.yaml"] = yaml.dump(
                 {"items": pods_data}, default_flow_style=False
             ).encode("utf-8")
@@ -322,7 +339,7 @@ class SnapshotCollector:
             workloads: list[dict] = []
             for kind in ["deployments", "statefulsets", "daemonsets", "replicasets", "jobs", "cronjobs"]:
                 items = [r async for r in api.get(kind, namespace=kr8s.ALL)]
-                workloads.extend([r.raw for r in items])
+                workloads.extend([_to_plain_dict(r.raw) for r in items])
             files["resources/workloads.yaml"] = yaml.dump(
                 {"items": workloads}, default_flow_style=False
             ).encode("utf-8")
@@ -337,7 +354,7 @@ class SnapshotCollector:
         try:
             hpas = [r async for r in api.get("horizontalpodautoscalers", namespace=kr8s.ALL)]
             files["resources/autoscaling.yaml"] = yaml.dump(
-                {"items": [r.raw for r in hpas]}, default_flow_style=False
+                {"items": [_to_plain_dict(r.raw) for r in hpas]}, default_flow_style=False
             ).encode("utf-8")
         except Exception as exc:
             raise SnapshotCollectionError(
@@ -351,7 +368,7 @@ class SnapshotCollector:
             network_items: list[dict] = []
             for kind in ["services", "endpoints", "endpointslices", "ingresses", "networkpolicies"]:
                 items = [r async for r in api.get(kind, namespace=kr8s.ALL)]
-                network_items.extend([r.raw for r in items])
+                network_items.extend([_to_plain_dict(r.raw) for r in items])
             files["resources/network.yaml"] = yaml.dump(
                 {"items": network_items}, default_flow_style=False
             ).encode("utf-8")
@@ -371,7 +388,7 @@ class SnapshotCollector:
                     items = [r async for r in api.get(kind)]
                 else:
                     items = [r async for r in api.get(kind, namespace=kr8s.ALL)]
-                storage_items.extend([r.raw for r in items])
+                storage_items.extend([_to_plain_dict(r.raw) for r in items])
             files["resources/storage.yaml"] = yaml.dump(
                 {"items": storage_items}, default_flow_style=False
             ).encode("utf-8")
@@ -387,7 +404,7 @@ class SnapshotCollector:
             policy_items: list[dict] = []
             for kind in ["resourcequotas", "limitranges", "poddisruptionbudgets"]:
                 items = [r async for r in api.get(kind, namespace=kr8s.ALL)]
-                policy_items.extend([r.raw for r in items])
+                policy_items.extend([_to_plain_dict(r.raw) for r in items])
             files["resources/policies.yaml"] = yaml.dump(
                 {"items": policy_items}, default_flow_style=False
             ).encode("utf-8")
@@ -402,7 +419,7 @@ class SnapshotCollector:
         try:
             configmaps = [r async for r in api.get("configmaps", namespace=kr8s.ALL)]
             files["resources/configmaps.yaml"] = yaml.dump(
-                {"items": [r.raw for r in configmaps]}, default_flow_style=False
+                {"items": [_to_plain_dict(r.raw) for r in configmaps]}, default_flow_style=False
             ).encode("utf-8")
         except Exception as exc:
             raise SnapshotCollectionError(
@@ -416,7 +433,7 @@ class SnapshotCollector:
             webhook_items: list[dict] = []
             for kind in ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]:
                 items = [r async for r in api.get(kind)]
-                webhook_items.extend([r.raw for r in items])
+                webhook_items.extend([_to_plain_dict(r.raw) for r in items])
             files["resources/webhooks.yaml"] = yaml.dump(
                 {"items": webhook_items}, default_flow_style=False
             ).encode("utf-8")
@@ -541,14 +558,14 @@ class SnapshotCollector:
             events = [e async for e in api.get("events", namespace=kr8s.ALL)]
 
             # events/all.yaml - all events
-            all_events_data = [e.raw for e in events]
+            all_events_data = [_to_plain_dict(e.raw) for e in events]
             files["events/all.yaml"] = yaml.dump(
                 {"items": all_events_data}, default_flow_style=False
             ).encode("utf-8")
 
             # events/warnings.yaml - warning-only events
             warning_events = [
-                e.raw for e in events if e.raw.get("type") == "Warning"
+                _to_plain_dict(e.raw) for e in events if e.raw.get("type") == "Warning"
             ]
             files["events/warnings.yaml"] = yaml.dump(
                 {"items": warning_events}, default_flow_style=False
@@ -587,7 +604,7 @@ class SnapshotCollector:
 
         # /readyz?verbose
         try:
-            async with api.call_api("GET", base="/readyz?verbose", version="") as response:
+            async with api.call_api("GET", base="/readyz", version="", params={"verbose": "true"}) as response:
                 files["raw/readyz.txt"] = response.content
         except Exception as exc:
             raise SnapshotCollectionError(
@@ -598,7 +615,7 @@ class SnapshotCollector:
 
         # /livez?verbose
         try:
-            async with api.call_api("GET", base="/livez?verbose", version="") as response:
+            async with api.call_api("GET", base="/livez", version="", params={"verbose": "true"}) as response:
                 files["raw/livez.txt"] = response.content
         except Exception as exc:
             raise SnapshotCollectionError(
@@ -665,7 +682,7 @@ class SnapshotCollector:
                 )
             ]
             files["resources/vpa.yaml"] = yaml.dump(
-                {"items": [r.raw for r in vpas]}, default_flow_style=False
+                {"items": [_to_plain_dict(r.raw) for r in vpas]}, default_flow_style=False
             ).encode("utf-8")
         except Exception as exc:
             logger.warning(
@@ -679,7 +696,7 @@ class SnapshotCollector:
             keda_items: list[dict] = []
             for kind in ["scaledobjects.keda.sh", "scaledjobs.keda.sh"]:
                 items = [r async for r in api.get(kind, namespace=kr8s.ALL)]
-                keda_items.extend([r.raw for r in items])
+                keda_items.extend([_to_plain_dict(r.raw) for r in items])
             files["resources/keda.yaml"] = yaml.dump(
                 {"items": keda_items}, default_flow_style=False
             ).encode("utf-8")
@@ -702,7 +719,7 @@ class SnapshotCollector:
                     items = [r async for r in api.get(kind)]
                 else:
                     items = [r async for r in api.get(kind, namespace=kr8s.ALL)]
-                gateway_items.extend([r.raw for r in items])
+                gateway_items.extend([_to_plain_dict(r.raw) for r in items])
             files["resources/gateway-api.yaml"] = yaml.dump(
                 {"items": gateway_items}, default_flow_style=False
             ).encode("utf-8")

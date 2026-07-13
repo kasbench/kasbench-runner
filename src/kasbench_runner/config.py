@@ -35,6 +35,14 @@ class DeploymentSpec:
     namespace: str
 
 
+@dataclass(frozen=True)
+class StatefulSetSpec:
+    """Identifies a Kubernetes StatefulSet to monitor."""
+
+    name: str
+    namespace: str
+
+
 # ---------------------------------------------------------------------------
 # Default deployment list for /rollout/all
 # Loaded from ROLLOUT_DEPLOYMENTS env var (JSON) or defaults below
@@ -71,6 +79,29 @@ DEFAULT_ROLLOUT_DEPLOYMENTS: list[dict[str, str]] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Default statefulset list for /rollout/all
+# Loaded from ROLLOUT_STATEFULSETS env var (JSON) or defaults below
+# ---------------------------------------------------------------------------
+DEFAULT_ROLLOUT_STATEFULSETS: list[dict[str, str]] = [
+    # globeco namespace (12)
+    {"name": "globeco-allocation-service-postgresql", "namespace": "globeco"},
+    {"name": "globeco-execution-service-kafka", "namespace": "globeco"},
+    {"name": "globeco-fix-engine-postgresql", "namespace": "globeco"},
+    {"name": "globeco-order-generation-service-mongodb", "namespace": "globeco"},
+    {"name": "globeco-order-generation-service-redis", "namespace": "globeco"},
+    {"name": "globeco-order-service-postgresql", "namespace": "globeco"},
+    {"name": "globeco-portfolio-accounting-service-postgresql", "namespace": "globeco"},
+    {"name": "globeco-portfolio-accounting-service-redis", "namespace": "globeco"},
+    {"name": "globeco-portfolio-service-mongodb", "namespace": "globeco"},
+    {"name": "globeco-pricing-service-postgresql", "namespace": "globeco"},
+    {"name": "globeco-security-service-mongodb", "namespace": "globeco"},
+    {"name": "globeco-trade-service-postgresql", "namespace": "globeco"},
+    # monitoring namespace (1)
+    {"name": "prometheus-alertmanager", "namespace": "monitoring"},
+]
+
+
 class RunnerConfig(BaseSettings):
     """Application configuration loaded from environment variables."""
 
@@ -102,6 +133,7 @@ class RunnerConfig(BaseSettings):
 
     # Rollout configuration
     rollout_deployments_json: str = Field(default="", alias="ROLLOUT_DEPLOYMENTS")
+    rollout_statefulsets_json: str = Field(default="", alias="ROLLOUT_STATEFULSETS")
 
     model_config = {"env_prefix": "", "case_sensitive": False, "populate_by_name": True}
 
@@ -163,6 +195,20 @@ class RunnerConfig(BaseSettings):
         return [
             DeploymentSpec(name=d["name"], namespace=d["namespace"])
             for d in DEFAULT_ROLLOUT_DEPLOYMENTS
+        ]
+
+    @property
+    def rollout_statefulsets(self) -> list[StatefulSetSpec]:
+        """Parse statefulset list from JSON env var or use defaults."""
+        if self.rollout_statefulsets_json:
+            parsed = json.loads(self.rollout_statefulsets_json)
+            return [
+                StatefulSetSpec(name=s["name"], namespace=s["namespace"])
+                for s in parsed
+            ]
+        return [
+            StatefulSetSpec(name=s["name"], namespace=s["namespace"])
+            for s in DEFAULT_ROLLOUT_STATEFULSETS
         ]
 
 

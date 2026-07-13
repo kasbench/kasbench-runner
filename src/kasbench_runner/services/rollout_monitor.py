@@ -8,9 +8,12 @@ API errors, and early termination on unrecoverable conditions.
 Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9
 """
 
+from __future__ import annotations
+
 import asyncio
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import kr8s
 import structlog
@@ -21,6 +24,9 @@ from kasbench_runner.errors import (
     RolloutTimeoutError,
     RolloutUnrecoverableError,
 )
+
+if TYPE_CHECKING:
+    from kasbench_runner.config import StatefulSetSpec
 
 logger = structlog.get_logger()
 
@@ -145,19 +151,24 @@ class RolloutMonitor:
         self,
         deployments: list[DeploymentSpec],
         timeout_seconds: int,
+        statefulsets: list | None = None,
     ) -> None:
-        """Wait for multiple deployments concurrently under a shared timeout.
+        """Wait for multiple deployments and statefulsets concurrently under a shared timeout.
 
         Args:
             deployments: List of DeploymentSpec instances to monitor.
             timeout_seconds: Maximum wall-clock time for the entire batch.
+            statefulsets: Optional list of StatefulSetSpec instances to monitor.
 
         Raises:
-            RolloutTimeoutError: Timeout with list of incomplete deployments.
-            RolloutUnrecoverableError: Any deployment hit terminal condition.
+            RolloutTimeoutError: Timeout with list of incomplete resources.
+            RolloutUnrecoverableError: Any resource hit terminal condition.
             KubernetesApiError: API unreachable after retries.
         """
-        if not deployments:
+        if statefulsets is None:
+            statefulsets = []
+
+        if not deployments and not statefulsets:
             return
 
         tasks = [
@@ -165,6 +176,15 @@ class RolloutMonitor:
                 self.wait_for_rollout(d.name, d.namespace, timeout_seconds)
             )
             for d in deployments
+        ] + [
+            asyncio.create_task(
+                self.wait_for_statefulset(s.name, s.namespace, timeout_seconds)
+            )
+            for s in statefulsets
+        ]
+
+        all_specs = list(deployments) + [
+            DeploymentSpec(name=s.name, namespace=s.namespace) for s in statefulsets
         ]
 
         done, pending = await asyncio.wait(
@@ -194,9 +214,9 @@ class RolloutMonitor:
                     await p
                 except (asyncio.CancelledError, Exception):
                     pass
-            # Determine which deployments are incomplete
+            # Determine which resources are incomplete
             incomplete = [
-                deployments[i]
+                all_specs[i]
                 for i, t in enumerate(tasks)
                 if t in pending
             ]
@@ -392,4 +412,193 @@ class RolloutMonitor:
         # Should not reach here, but safety net
         raise KubernetesApiError(
             message=f"Failed to fetch deployment {namespace}/{deployment_name} after retries"
+        )
+
+    async def wait_for_statefulset(
+        self,
+        statefulset_name: str,
+        namespace: str,
+        timeout_seconds: int,
+    ) -> float:
+        """Wait for a single statefulset rollout to complete.
+
+        Polls the statefulset every POLL_INTERVAL seconds, checking for success
+        and pod-level failures.
+
+        Args:
+            statefulset_name: Name of the StatefulSet resource.
+            namespace: Kubernetes namespace.
+            timeout_seconds: Maximum wait time in seconds.
+
+        Returns:
+            Elapsed time in seconds.
+
+        Raises:
+            DeploymentNotFoundError: StatefulSet does not exist.
+            RolloutTimeoutError: Timeout elapsed before completion.
+            RolloutUnrecoverableError: Terminal condition detected.
+            KubernetesApiError: API unreachable after retries.
+        """
+        start = time.monotonic()
+
+        while True:
+            elapsed = time.monotonic() - start
+
+            if elapsed >= timeout_seconds:
+                raise RolloutTimeoutError(
+                    deployment_name=statefulset_name,
+                    namespace=namespace,
+                    elapsed_seconds=elapsed,
+                )
+
+            # Fetch the statefulset with transient error retries
+            statefulset = await self._fetch_statefulset_with_retry(
+                statefulset_name, namespace
+            )
+
+            status = statefulset.status
+            spec = statefulset.spec
+
+            # Check pod-level unrecoverable conditions
+            pod_failure = await self._check_pod_conditions(
+                statefulset_name, namespace
+            )
+            if pod_failure:
+                pod_name, condition = pod_failure
+                raise RolloutUnrecoverableError(
+                    deployment_name=statefulset_name,
+                    namespace=namespace,
+                    reason=condition,
+                    pod_name=pod_name,
+                )
+
+            # Check success: readyReplicas == replicas and updatedReplicas == replicas
+            if self._is_statefulset_ready(status, spec):
+                elapsed = time.monotonic() - start
+                logger.info(
+                    "statefulset_rollout_complete",
+                    statefulset=statefulset_name,
+                    namespace=namespace,
+                    elapsed_seconds=round(elapsed, 1),
+                )
+                return elapsed
+
+            # Log progress
+            ready_replicas = status.get("readyReplicas", 0) or 0
+            desired_replicas = spec.get("replicas", 0) or 0
+            logger.info(
+                "statefulset_rollout_progress",
+                statefulset=statefulset_name,
+                namespace=namespace,
+                ready_replicas=ready_replicas,
+                desired_replicas=desired_replicas,
+                elapsed_seconds=round(elapsed, 1),
+            )
+
+            await asyncio.sleep(self.POLL_INTERVAL)
+
+    def _is_statefulset_ready(self, status: dict, spec: dict) -> bool:
+        """Check if statefulset meets readiness criteria.
+
+        Success requires:
+        - readyReplicas == replicas
+        - updatedReplicas == replicas (if updateStrategy is RollingUpdate)
+        - currentRevision == updateRevision (partition rollout complete)
+
+        Args:
+            status: The statefulset's .status dict.
+            spec: The statefulset's .spec dict.
+
+        Returns:
+            True if statefulset is fully ready, False otherwise.
+        """
+        replicas = spec.get("replicas", 0)
+        if replicas is None or replicas == 0:
+            return False
+
+        ready_replicas = status.get("readyReplicas", 0) or 0
+        updated_replicas = status.get("updatedReplicas", 0) or 0
+
+        if ready_replicas != replicas:
+            return False
+        if updated_replicas != replicas:
+            return False
+
+        # Check revision match (indicates rollout is complete)
+        current_revision = status.get("currentRevision", "")
+        update_revision = status.get("updateRevision", "")
+        if current_revision and update_revision and current_revision != update_revision:
+            return False
+
+        return True
+
+    async def _fetch_statefulset_with_retry(
+        self, statefulset_name: str, namespace: str
+    ) -> object:
+        """Fetch statefulset from K8s API with transient error retries.
+
+        Args:
+            statefulset_name: Name of the statefulset.
+            namespace: Kubernetes namespace.
+
+        Returns:
+            The kr8s StatefulSet object.
+
+        Raises:
+            DeploymentNotFoundError: If the statefulset does not exist.
+            KubernetesApiError: If all retries are exhausted.
+        """
+        for attempt in range(self.RETRY_LIMIT + 1):
+            try:
+                api = await kr8s.asyncio.api()
+                statefulsets = [
+                    sts
+                    async for sts in api.get(
+                        "statefulsets", statefulset_name, namespace=namespace
+                    )
+                ]
+
+                if not statefulsets:
+                    raise DeploymentNotFoundError(
+                        deployment_name=statefulset_name,
+                        namespace=namespace,
+                    )
+
+                return statefulsets[0]
+
+            except DeploymentNotFoundError:
+                raise
+
+            except kr8s.NotFoundError:
+                raise DeploymentNotFoundError(
+                    deployment_name=statefulset_name,
+                    namespace=namespace,
+                )
+
+            except (
+                ConnectionError,
+                TimeoutError,
+                OSError,
+                kr8s.APITimeoutError,
+                kr8s.ServerError,
+            ) as exc:
+                if attempt == self.RETRY_LIMIT:
+                    raise KubernetesApiError(message=str(exc)) from exc
+
+                logger.warning(
+                    "kubernetes_api_retry",
+                    statefulset=statefulset_name,
+                    namespace=namespace,
+                    retry_attempt=attempt + 1,
+                    max_retries=self.RETRY_LIMIT,
+                    error=str(exc),
+                )
+
+                await asyncio.sleep(self.RETRY_DELAY)
+
+            except Exception as exc:
+                raise KubernetesApiError(message=str(exc)) from exc
+
+        raise KubernetesApiError(
+            message=f"Failed to fetch statefulset {namespace}/{statefulset_name} after retries"
         )
