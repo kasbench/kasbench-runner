@@ -8,6 +8,7 @@ Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10,
               3.11, 3.12, 3.13, 3.14, 3.15, 3.16
 """
 
+import asyncio
 import hashlib
 import json
 from dataclasses import dataclass
@@ -584,6 +585,8 @@ class SnapshotCollector:
         """Collect raw API endpoint responses.
 
         Gathers /readyz, /livez, node-metrics, pod-metrics.
+        Uses kubectl get --raw to avoid URL normalization issues with kr8s/httpx
+        (which appends a trailing slash before query params, causing 404s).
 
         Returns:
             Dict mapping relative path to content bytes.
@@ -593,62 +596,32 @@ class SnapshotCollector:
         """
         files: dict[str, bytes] = {}
 
-        try:
-            api = await kr8s.asyncio.api()
-        except Exception as exc:
-            raise SnapshotCollectionError(
-                resource="raw/api-connection",
-                exception_class=type(exc).__name__,
-                exception_message=str(exc),
-            ) from exc
+        raw_endpoints = [
+            ("raw/readyz.txt", "/readyz?verbose"),
+            ("raw/livez.txt", "/livez?verbose"),
+            ("raw/node-metrics.json", "/apis/metrics.k8s.io/v1beta1/nodes"),
+            ("raw/pod-metrics.json", "/apis/metrics.k8s.io/v1beta1/pods"),
+        ]
 
-        # /readyz?verbose
-        try:
-            async with api.call_api("GET", base="/readyz", version="", params={"verbose": "true"}) as response:
-                files["raw/readyz.txt"] = response.content
-        except Exception as exc:
-            raise SnapshotCollectionError(
-                resource="raw/readyz.txt",
-                exception_class=type(exc).__name__,
-                exception_message=str(exc),
-            ) from exc
-
-        # /livez?verbose
-        try:
-            async with api.call_api("GET", base="/livez", version="", params={"verbose": "true"}) as response:
-                files["raw/livez.txt"] = response.content
-        except Exception as exc:
-            raise SnapshotCollectionError(
-                resource="raw/livez.txt",
-                exception_class=type(exc).__name__,
-                exception_message=str(exc),
-            ) from exc
-
-        # node-metrics
-        try:
-            async with api.call_api(
-                "GET", base="/apis/metrics.k8s.io/v1beta1/nodes", version=""
-            ) as response:
-                files["raw/node-metrics.json"] = response.content
-        except Exception as exc:
-            raise SnapshotCollectionError(
-                resource="raw/node-metrics.json",
-                exception_class=type(exc).__name__,
-                exception_message=str(exc),
-            ) from exc
-
-        # pod-metrics
-        try:
-            async with api.call_api(
-                "GET", base="/apis/metrics.k8s.io/v1beta1/pods", version=""
-            ) as response:
-                files["raw/pod-metrics.json"] = response.content
-        except Exception as exc:
-            raise SnapshotCollectionError(
-                resource="raw/pod-metrics.json",
-                exception_class=type(exc).__name__,
-                exception_message=str(exc),
-            ) from exc
+        for file_key, path in raw_endpoints:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "kubectl", "get", "--raw", path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await proc.communicate()
+                if proc.returncode != 0:
+                    raise RuntimeError(
+                        f"kubectl get --raw '{path}' failed: {stderr.decode().strip()}"
+                    )
+                files[file_key] = stdout
+            except Exception as exc:
+                raise SnapshotCollectionError(
+                    resource=file_key,
+                    exception_class=type(exc).__name__,
+                    exception_message=str(exc),
+                ) from exc
 
         return files
 
