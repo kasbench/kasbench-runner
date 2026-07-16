@@ -47,11 +47,16 @@ class RolloutMonitor:
     RETRY_DELAY: int = 15  # seconds
 
     UNRECOVERABLE_POD_CONDITIONS: set[str] = {
-        "CrashLoopBackOff",
-        "ImagePullBackOff",
-        "ErrImagePull",
+        # "CrashLoopBackOff",  # Recoverable
+        # "ImagePullBackOff",  # Recoverable
+        # "ErrImagePull",      # Recoverable
         "InvalidImageName",
         "CreateContainerConfigError",
+        "CreateContainerError",
+        "FailedCreatePodSandBox",
+        "FailedMount",
+        "FailedScheduling",
+        "SysctlForbidden",
     }
 
     async def wait_for_rollout(
