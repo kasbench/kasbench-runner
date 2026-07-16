@@ -252,6 +252,7 @@ ROLE_PARAMS: dict[str, RoleParameters] = {
 
 MANIFEST_REPOS: list[dict[str, str]] = [
     {"owner": "kasbench", "repo": "globeco-observability", "tag": "v1.1.5"},
+    {"owner": "kasbench", "repo": "globeco-gateway", "tag": "v1.1.5"},
     {"owner": "kasbench", "repo": "globeco-kafka", "tag": "v1.1.5"},
     {"owner": "kasbench", "repo": "globeco-order-generation-service", "tag": "v1.1.5"},
     {"owner": "kasbench", "repo": "globeco-order-service", "tag": "v1.1.5"},
