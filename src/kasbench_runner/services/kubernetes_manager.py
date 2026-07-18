@@ -1,9 +1,10 @@
 """Kubernetes cluster installation and configuration manager.
 
 Orchestrates kubeadm init, kubeconfig copy, Flannel install, worker join,
-node readiness polling via kr8s, namespace creation, and EBS CSI driver setup.
+node readiness polling via kr8s, namespace creation, EBS CSI driver setup,
+Envoy Gateway install, Prometheus install, and OpenTelemetry Collector setup.
 
-Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 4.10, 4.11, 4.12, 4.13, 4.14
+Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 4.10, 4.11, 4.12, 4.13, 4.14, 5
 """
 
 import asyncio
@@ -66,6 +67,7 @@ class KubernetesManager:
         ssh_client: SSHClient,
         readiness_timeout_seconds: int = 300,
         poll_interval_seconds: int = 10,
+        prometheus_values_url: str = "https://raw.githubusercontent.com/kasbench/globeco-observability/v1.1.5/k8s_aws/values_prometheus.yaml",
     ) -> None:
         """Initialize KubernetesManager.
 
@@ -73,10 +75,12 @@ class KubernetesManager:
             ssh_client: SSH client for remote command execution.
             readiness_timeout_seconds: Max time to wait for all nodes to be Ready.
             poll_interval_seconds: Interval between node readiness polls.
+            prometheus_values_url: URL for the Prometheus Helm values file.
         """
         self._ssh = ssh_client
         self._readiness_timeout = readiness_timeout_seconds
         self._poll_interval = poll_interval_seconds
+        self._prometheus_values_url = prometheus_values_url
 
     async def install_cluster(
         self,
@@ -137,6 +141,15 @@ class KubernetesManager:
 
         # Step 8: Install EBS CSI driver and StorageClass
         await self._install_ebs_csi()
+
+        # Step 9: Install Envoy Gateway
+        await self._install_envoy_gateway()
+
+        # Step 10: Install Prometheus
+        await self._install_prometheus()
+
+        # Step 11: Install OpenTelemetry Collector operator
+        await self._install_otel_collector()
 
         logger.info("kubernetes_install_completed", node_count=expected_node_count)
 
@@ -582,5 +595,299 @@ class KubernetesManager:
                 step="create_storage_class",
                 node=None,
                 command=sc_command,
+                error_output=str(exc),
+            ) from exc
+
+    async def _install_envoy_gateway(self) -> None:
+        """Install Envoy Gateway via Helm OCI chart and wait for readiness.
+
+        Raises:
+            KubernetesError: If Helm install or readiness wait fails.
+        """
+        # Helm install
+        helm_command = (
+            "helm install eg oci://docker.io/envoyproxy/gateway-helm"
+            " --version v1.8.2 -n envoy-gateway-system --create-namespace"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                helm_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_envoy_gateway",
+                    node=None,
+                    command=helm_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("envoy_gateway_helm_installed")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_envoy_gateway",
+                node=None,
+                command=helm_command,
+                error_output=str(exc),
+            ) from exc
+
+        # Wait for readiness
+        wait_command = (
+            "kubectl wait --timeout=5m -n envoy-gateway-system"
+            " deployment/envoy-gateway --for=condition=Available"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                wait_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_envoy_gateway",
+                    node=None,
+                    command=wait_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("envoy_gateway_installed")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_envoy_gateway",
+                node=None,
+                command=wait_command,
+                error_output=str(exc),
+            ) from exc
+
+    async def _install_prometheus(self) -> None:
+        """Install Prometheus via Helm with custom values file.
+
+        Adds the prometheus-community Helm repo, updates repos, then installs
+        Prometheus into the monitoring namespace using the configured values URL.
+
+        Raises:
+            KubernetesError: If Helm repo add/update or chart install fails.
+        """
+        # Add Helm repo and update
+        repo_add_command = (
+            "helm repo add prometheus-community"
+            " https://prometheus-community.github.io/helm-charts"
+            " && helm repo update"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                repo_add_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_prometheus",
+                    node=None,
+                    command=repo_add_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("helm_repo_added", repo="prometheus-community")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_prometheus",
+                node=None,
+                command=repo_add_command,
+                error_output=str(exc),
+            ) from exc
+
+        # Install Prometheus chart
+        helm_command = (
+            "helm install prometheus prometheus-community/prometheus"
+            f" -f {self._prometheus_values_url} -n monitoring"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                helm_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_prometheus",
+                    node=None,
+                    command=helm_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("prometheus_installed")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_prometheus",
+                node=None,
+                command=helm_command,
+                error_output=str(exc),
+            ) from exc
+
+    async def _install_otel_collector(self) -> None:
+        """Install cert-manager and OpenTelemetry Operator.
+
+        First installs cert-manager and waits for readiness, then installs
+        the OpenTelemetry Operator and waits for its controller manager.
+
+        Raises:
+            KubernetesError: If any command fails.
+        """
+        # Install cert-manager
+        cm_apply_cmd = (
+            "kubectl apply -f"
+            " https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                cm_apply_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_otel_collector",
+                    node=None,
+                    command=cm_apply_cmd,
+                    error_output=stderr.decode().strip(),
+                )
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_otel_collector",
+                node=None,
+                command=cm_apply_cmd,
+                error_output=str(exc),
+            ) from exc
+
+        # Wait for cert-manager
+        cm_wait_cmd = (
+            "kubectl wait --for=condition=Available deployment --all"
+            " -n cert-manager --timeout=360s"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                cm_wait_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_otel_collector",
+                    node=None,
+                    command=cm_wait_cmd,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("cert_manager_installed")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_otel_collector",
+                node=None,
+                command=cm_wait_cmd,
+                error_output=str(exc),
+            ) from exc
+
+        # Install OTel operator
+        otel_apply_cmd = (
+            "kubectl apply -f"
+            " https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                otel_apply_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_otel_collector",
+                    node=None,
+                    command=otel_apply_cmd,
+                    error_output=stderr.decode().strip(),
+                )
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_otel_collector",
+                node=None,
+                command=otel_apply_cmd,
+                error_output=str(exc),
+            ) from exc
+
+        # Wait for OTel operator
+        otel_wait_cmd = (
+            "kubectl wait --for=condition=Available"
+            " deployment/opentelemetry-operator-controller-manager"
+            " -n opentelemetry-operator-system --timeout=360s"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                otel_wait_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_otel_collector",
+                    node=None,
+                    command=otel_wait_cmd,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("otel_collector_installed")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_otel_collector",
+                node=None,
+                command=otel_wait_cmd,
                 error_output=str(exc),
             ) from exc

@@ -116,6 +116,7 @@ class RunnerConfig(BaseSettings):
     # Kubernetes
     node_readiness_timeout_seconds: int = 300
     node_readiness_poll_interval: int = 10
+    prometheus_values_url: str = "https://raw.githubusercontent.com/kasbench/globeco-observability/v1.1.5/k8s_aws/values_prometheus.yaml"
 
     # Health checks
     health_check_max_attempts: int = 3
