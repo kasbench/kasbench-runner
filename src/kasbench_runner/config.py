@@ -133,7 +133,7 @@ class RunnerConfig(BaseSettings):
     manifest_fetch_timeout: int = 30
 
     # Helm
-    helm_install_timeout: int = 300
+    helm_install_timeout: int = 1200
     helm_repo_name: str = "globeco-repo"
     helm_repo_url: str = "https://kasbench.github.io/globeco-helm"
     helm_chart_name: str = "globeco"
