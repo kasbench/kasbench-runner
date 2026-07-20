@@ -132,6 +132,14 @@ class RunnerConfig(BaseSettings):
     # Manifest fetching
     manifest_fetch_timeout: int = 30
 
+    # Helm
+    helm_install_timeout: int = 300
+    helm_repo_name: str = "globeco-repo"
+    helm_repo_url: str = "https://kasbench.github.io/globeco-helm"
+    helm_chart_name: str = "globeco"
+    helm_release_name: str = "globeco"
+    helm_namespace: str = "globeco"
+
     # Rollout configuration
     rollout_deployments_json: str = Field(default="", alias="ROLLOUT_DEPLOYMENTS")
     rollout_statefulsets_json: str = Field(default="", alias="ROLLOUT_STATEFULSETS")

@@ -19,7 +19,8 @@ from kasbench_runner.services.ssh_client import SSHClient
 
 logger = structlog.get_logger()
 
-NAMESPACES = ["globeco", "monitoring", "elasticsearch", "observability"]
+# NAMESPACES = ["globeco", "monitoring", "elasticsearch", "observability"]
+NAMESPACES = ["monitoring", "elasticsearch", "observability"]
 
 # Node conditions that indicate a critical problem if persisted > 120s
 CRITICAL_NOT_READY_REASONS = {"NetworkNotReady", "KubeletNotReady", "ContainerRuntimeNotReady"}
@@ -140,13 +141,13 @@ class KubernetesManager:
         await self._create_namespaces()
 
         # Step 8: Install EBS CSI driver and StorageClass
-        await self._install_ebs_csi()
+        # await self._install_ebs_csi()
 
         # Step 9: Install Envoy Gateway
-        await self._install_envoy_gateway()
+        # await self._install_envoy_gateway()
 
         # Step 10: Install Prometheus
-        await self._install_prometheus()
+        # await self._install_prometheus()
 
         # Step 11: Install OpenTelemetry Collector operator
         await self._install_otel_collector()

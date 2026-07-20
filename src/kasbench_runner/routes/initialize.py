@@ -22,7 +22,7 @@ from kasbench_runner.config import (
     VALID_ROLES,
     RunnerConfig,
 )
-from kasbench_runner.errors import ManifestError, build_error_response
+from kasbench_runner.errors import HelmInstallError, ManifestError, build_error_response
 from kasbench_runner.models.requests import InitializeRequest
 from kasbench_runner.models.state import BenchmarkState, BenchmarkStatus
 from kasbench_runner.services.docker_manager import DockerManager
@@ -122,16 +122,15 @@ async def initialize(body: InitializeRequest, request: Request) -> JSONResponse:
                 exception_class=type(exc).__name__,
             )
 
-    # Step 4: Manifest install (Req 5.1–5.13)
-    manifest_errors: list[dict[str, str]] = []
+    # Step 4: GlobeCo Helm install (Req 6)
     if body.skip_manifest_install:
-        logger.info("manifest_install_skipped")
+        logger.info("helm_install_skipped")
         state.globeco_installed = True
     else:
         try:
-            manifest_errors = await _install_manifests(body, config)
+            await _install_helm_chart(config, body.autoscaler)
             state.globeco_installed = True
-        except ManifestError as exc:
+        except HelmInstallError as exc:
             return build_error_response(
                 error=exc.error,
                 message=exc.message,
@@ -149,7 +148,7 @@ async def initialize(body: InitializeRequest, request: Request) -> JSONResponse:
                     **exc.context,
                 )
             return build_error_response(
-                error="manifest_install_failed",
+                error="helm_install_failed",
                 message=str(exc),
                 status_code=500,
                 exception_class=type(exc).__name__,
@@ -187,22 +186,83 @@ async def initialize(body: InitializeRequest, request: Request) -> JSONResponse:
         load_generators_installed=state.load_generators_installed,
     )
 
-    response_content: dict = {
-        "message": "Initialization complete",
-        "status": "not-started",
-    }
-
-    if manifest_errors:
-        response_content["manifest_errors"] = manifest_errors
-
     return JSONResponse(
         status_code=200,
-        content=response_content,
+        content={
+            "message": "Initialization complete",
+            "status": "not-started",
+        },
     )
+
+
+async def _install_helm_chart(config: RunnerConfig, autoscaler: str) -> None:
+    """Deploy GlobeCo via Helm chart install.
+
+    Executes three commands sequentially:
+    1. helm repo add {repo_name} {repo_url}
+    2. helm repo update
+    3. helm install {release} {repo_name}/{chart} --namespace {ns} --create-namespace --wait --timeout {t}s --set autoscaler={autoscaler}
+
+    Args:
+        config: Runner configuration with Helm settings.
+        autoscaler: The autoscaler type to pass to the Helm chart.
+
+    Raises:
+        HelmInstallError: If any Helm command fails.
+    """
+    commands = [
+        ["helm", "repo", "add", config.helm_repo_name, config.helm_repo_url],
+        ["helm", "repo", "update"],
+        [
+            "helm", "install", config.helm_release_name,
+            f"{config.helm_repo_name}/{config.helm_chart_name}",
+            "--namespace", config.helm_namespace,
+            "--create-namespace",
+            "--wait",
+            "--timeout", f"{config.helm_install_timeout}s",
+            "--set", f"autoscaler={autoscaler}",
+        ],
+    ]
+
+    for cmd in commands:
+        cmd_str = " ".join(cmd)
+        logger.info("helm_command_start", command=cmd_str)
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+        except FileNotFoundError:
+            raise HelmInstallError(
+                command=cmd_str,
+                stderr="Helm CLI binary not found. Ensure helm is installed and on PATH.",
+            )
+
+        if proc.returncode != 0:
+            error_output = stderr.decode().strip()
+            logger.error(
+                "helm_command_failed",
+                command=cmd_str,
+                exit_code=proc.returncode,
+                stderr=error_output,
+            )
+            raise HelmInstallError(command=cmd_str, stderr=error_output)
+
+        logger.info(
+            "helm_command_success",
+            command=cmd_str,
+            stdout=stdout.decode()[:200],
+        )
 
 
 async def _install_manifests(body: InitializeRequest, config: RunnerConfig) -> list[dict[str, str]]:
     """Fetch and execute manifest operations from all configured repos.
+
+    .. deprecated::
+        Retained for backward compatibility. Use _install_helm_chart instead.
 
     Iterates MANIFEST_REPOS, fetches k8s.lst from each, parses operations,
     and executes them in sequence.
@@ -276,6 +336,9 @@ async def _execute_manifest_operations(
     force: bool,
 ) -> list[dict[str, str]]:
     """Execute a list of parsed manifest operations.
+
+    .. deprecated::
+        Retained for backward compatibility. Use _install_helm_chart instead.
 
     Args:
         operations: Parsed operations from k8s.lst.

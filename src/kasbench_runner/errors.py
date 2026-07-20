@@ -70,6 +70,18 @@ class ManifestError(RunnerError):
         )
 
 
+class HelmInstallError(RunnerError):
+    """Helm chart installation failure."""
+
+    def __init__(self, command: str, stderr: str):
+        super().__init__(
+            error="helm_install_failed",
+            message=f"Helm operation failed: {command}",
+            command=command,
+            stderr=stderr,
+        )
+
+
 class RolloutTimeoutError(RunnerError):
     """Deployment rollout timed out."""
 

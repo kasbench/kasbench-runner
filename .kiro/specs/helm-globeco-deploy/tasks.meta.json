@@ -1,0 +1,200 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Add `HelmInstallError` class inheriting from `RunnerError`": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505809279
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505818971
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505863477
+      }
+    ],
+    "2.1 Add Helm fields to `RunnerConfig` in `config.py`": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505809355
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505868887
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505999573
+      }
+    ],
+    "3.1 Add `_install_helm_chart(config: RunnerConfig) -> None` async function": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505809377
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506024181
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506085439
+      }
+    ],
+    "4.1 Replace step 4 body with Helm install logic": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505809406
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506088786
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506182689
+      }
+    ],
+    "4.2 Update imports in initialize.py": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505809430
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506089548
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506183477
+      }
+    ],
+    "5.1 Add deprecation notices to `_install_manifests` and `_execute_manifest_operations`": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505809464
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506090447
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506184567
+      }
+    ],
+    "6. Checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505809484
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506197701
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506242144
+      }
+    ],
+    "7.1 Remove `manifest_errors` from initialize response": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505809504
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506191518
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506194698
+      }
+    ],
+    "8. Final checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505809527
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506245467
+      },
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506248214
+      }
+    ],
+    "1. Add HelmInstallError to errors.py": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505863501
+      }
+    ],
+    "2. Add Helm configuration fields to RunnerConfig": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784505999631
+      }
+    ],
+    "3. Implement `_install_helm_chart` helper in initialize.py": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506085458
+      }
+    ],
+    "4. Rewire step 4 in `initialize()` to use Helm": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506183500
+      }
+    ],
+    "5. Deprecate old manifest functions": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506184594
+      }
+    ],
+    "7. Clean up response shape": [
+      {
+        "executionId": "2f5d0683-31f2-4f1e-bd0e-75acf5236a74",
+        "chatSessionId": "sess_ceea2d4e-63ab-4dd3-84e6-374fc62de5cd",
+        "timestamp": 1784506194725
+      }
+    ]
+  }
+}
