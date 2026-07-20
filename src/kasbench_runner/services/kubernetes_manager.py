@@ -20,7 +20,8 @@ from kasbench_runner.services.ssh_client import SSHClient
 logger = structlog.get_logger()
 
 # NAMESPACES = ["globeco", "monitoring", "elasticsearch", "observability"]
-NAMESPACES = ["monitoring", "elasticsearch", "observability"]
+# NAMESPACES = ["monitoring", "elasticsearch", "observability"]
+NAMESPACES = []
 
 # Node conditions that indicate a critical problem if persisted > 120s
 CRITICAL_NOT_READY_REASONS = {"NetworkNotReady", "KubeletNotReady", "ContainerRuntimeNotReady"}
