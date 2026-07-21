@@ -148,7 +148,7 @@ class KubernetesManager:
         # await self._install_envoy_gateway()
 
         # Step 10: Install Prometheus
-        # await self._install_prometheus()
+        await self._install_prometheus()
 
         # Step 11: Install OpenTelemetry Collector operator
         await self._install_otel_collector()
@@ -721,7 +721,7 @@ class KubernetesManager:
         # Install Prometheus chart
         helm_command = (
             "helm install prometheus prometheus-community/prometheus"
-            f" -f {self._prometheus_values_url} -n monitoring"
+            f" -f {self._prometheus_values_url} -n monitoring --create-namespace"
         )
         try:
             proc = await asyncio.create_subprocess_exec(

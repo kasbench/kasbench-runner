@@ -18,7 +18,7 @@ helm repo add prometheus-community https://prometheus-community.github.io/helm-c
  helm repo update
 
 # Install prometheus
-helm install prometheus prometheus-community/prometheus -f https://raw.githubusercontent.com/kasbench/globeco-observability/v1.1.5/k8s_aws/values_prometheus.yaml -n monitoring
+helm install prometheus prometheus-community/prometheus -f https://raw.githubusercontent.com/kasbench/globeco-observability/v1.1.5/k8s_aws/values_prometheus.yaml -n prometheus --create-namespace
 ```
 **Note**: the URL of the Prometheus values file above should be stored in configuration and easily changed.
 
