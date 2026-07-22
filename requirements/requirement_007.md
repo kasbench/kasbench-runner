@@ -4,7 +4,7 @@ The purpose of this requirement is to add a new endpoint to collect and export r
 
 ## POST /roundtrip/export
 
-The following is example code from a different application.  This application needs to perform the same function.  It should take the same approach to executing the psql query shown in the example.  However, the results should be stored to S3 at `{s3bucket}/{runIdentifier}/{trialIdentifier}/roundtrip/trade_orders.json`
+The following is example code from a different application.  This application needs to perform the same function.  It should take the same approach to executing the psql query shown in the example.  However, the results should be stored to S3 at `{s3bucket}/{runIdentifier}/{trialIdentifier}/roundtrip/trade_orders.json`, where s3bucket, runIdentifier, and trialIdentifier are parameters previously passed in the initialization request object.  The example is intended to show the general logic.  The new function in this program should follow the standards and conventions of this code base.   
 
 ```python
 def get_roundtrip_trade_results(bucket_name, trial, filename=None):
