@@ -721,7 +721,7 @@ class KubernetesManager:
         # Install Prometheus chart
         helm_command = (
             "helm install prometheus prometheus-community/prometheus"
-            f" -f {self._prometheus_values_url} -n monitoring --create-namespace"
+            f" -f {self._prometheus_values_url} -n monitoring --create-namespace "
         )
         try:
             proc = await asyncio.create_subprocess_exec(
