@@ -35,6 +35,7 @@ class InitializeRequest(BaseModel):
     )
     run_duration_minutes: int = Field(default=5, alias="runDurationMinutes", ge=1)
     globeco_port: int = Field(default=8080, alias="globecoPort", ge=1, le=65535)
+    execution_data_fs: str = Field(default="none", alias="executionDataFs")
     skip_kubernetes_install: bool = Field(default=False, alias="skipKubernetesInstall")
     skip_manifest_install: bool = Field(default=False, alias="skipManifestInstall")
     force_manifest_install: bool = Field(default=False, alias="forceManifestInstall")

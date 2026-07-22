@@ -128,7 +128,7 @@ async def initialize(body: InitializeRequest, request: Request) -> JSONResponse:
         state.globeco_installed = True
     else:
         try:
-            await _install_helm_chart(config, body.autoscaler)
+            await _install_helm_chart(config, body.autoscaler, body.execution_data_fs)
             state.globeco_installed = True
         except HelmInstallError as exc:
             return build_error_response(
@@ -195,17 +195,18 @@ async def initialize(body: InitializeRequest, request: Request) -> JSONResponse:
     )
 
 
-async def _install_helm_chart(config: RunnerConfig, autoscaler: str) -> None:
+async def _install_helm_chart(config: RunnerConfig, autoscaler: str, execution_data_fs: str = "none") -> None:
     """Deploy GlobeCo via Helm chart install.
 
     Executes three commands sequentially:
     1. helm repo add {repo_name} {repo_url}
     2. helm repo update
-    3. helm install {release} {repo_name}/{chart} --namespace {ns} --create-namespace --wait --timeout {t}s --set autoscaler={autoscaler}
+    3. helm install {release} {repo_name}/{chart} --namespace {ns} --create-namespace --wait --timeout {t}s --set autoscaler={autoscaler} --set execution-data-fs={execution_data_fs}
 
     Args:
         config: Runner configuration with Helm settings.
         autoscaler: The autoscaler type to pass to the Helm chart.
+        execution_data_fs: The execution data filesystem type. Defaults to "none".
 
     Raises:
         HelmInstallError: If any Helm command fails.
@@ -221,6 +222,7 @@ async def _install_helm_chart(config: RunnerConfig, autoscaler: str) -> None:
             "--wait",
             "--timeout", f"{config.helm_install_timeout}s",
             "--set", f"autoscaler={autoscaler}",
+            "--set", f"execution-data-fs={execution_data_fs}",
         ],
     ]
 

@@ -134,6 +134,7 @@ Initialize the benchmark environment: reserve S3 trial, configure Kubernetes, de
 | `globecoPort` | int | no | `8080` | GlobeCo port |
 | `skipKubernetesInstall` | bool | no | `false` | Skip k8s cluster setup |
 | `skipManifestInstall` | bool | no | `false` | Skip manifest deployment |
+| `executionDataFs` | string | no | `"none"` | Execution data filesystem type (passed to Helm as `--set execution-data-fs=...`) |
 | `forceManifestInstall` | bool | no | `false` | Continue on manifest errors |
 
 **Responses:** `200` success, `409` already initialized or duplicate trial, `422` validation error, `500` infrastructure failure.
@@ -359,7 +360,7 @@ Export a comprehensive metadata document (run_details.json) to S3 capturing the 
 |-------|-------------|
 | `timestamp` | ISO 8601 UTC generation time |
 | `environment` | All 12 RunnerConfig fields (HOST, PORT, SSH_USER, SSH_CONNECT_TIMEOUT, NODE_READINESS_TIMEOUT_SECONDS, NODE_READINESS_POLL_INTERVAL, HEALTH_CHECK_MAX_ATTEMPTS, HEALTH_CHECK_INTERVAL_SECONDS, RABBITMQ_IMAGE, HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT, MANIFEST_FETCH_TIMEOUT) |
-| `initialization` | All 15 initialization fields (autoscaler, controlPlaneNode, amdWorkerNodes, armWorkerNodes, s3Bucket, globecoUrl, runIdentifier, trialIdentifier, clusterCidrRange, kubernetesVersion, loadGeneratorImage, runDurationMinutes, globecoPort, skipKubernetesInstall, skipManifestInstall, forceManifestInstall) |
+| `initialization` | All 16 initialization fields (autoscaler, controlPlaneNode, amdWorkerNodes, armWorkerNodes, s3Bucket, globecoUrl, runIdentifier, trialIdentifier, clusterCidrRange, kubernetesVersion, loadGeneratorImage, runDurationMinutes, globecoPort, executionDataFs, skipKubernetesInstall, skipManifestInstall, forceManifestInstall) |
 | `roles` | Per-role parameters (base_load_intensity, base_delay_percentage, spawn_rate) for all 5 roles |
 | `manifests` | Kubernetes manifest repositories with owner, repo, and tag fields |
 | `status` | Full status response equivalent to GET /status (overall status, start_time, end_time, load_generators) |
