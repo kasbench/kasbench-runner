@@ -30,7 +30,7 @@ _TERMINAL_STATUSES = {
 }
 
 _KUBECTL_COMMAND = [
-    "kubectl", "exec", "svc/globeco-debug-tools", "--",
+    "kubectl", "exec", "svc/globeco-debug-tools", "-n", "globeco", "--",
     "psql", "-h", "globeco-trade-service-postgresql",
     "-U", "postgres", "-tAc",
     "select json_agg(t) from (select sum(quantity_ordered) quantity_ordered, "

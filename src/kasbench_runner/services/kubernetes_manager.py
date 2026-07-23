@@ -144,6 +144,9 @@ class KubernetesManager:
         # Step 8: Install EBS CSI driver and StorageClass
         # await self._install_ebs_csi()
 
+        # Step 8.5: Install EFS CSI driver
+        # await self._install_efs_csi()
+
         # Step 9: Install Envoy Gateway
         # await self._install_envoy_gateway()
 
@@ -597,6 +600,84 @@ class KubernetesManager:
                 step="create_storage_class",
                 node=None,
                 command=sc_command,
+                error_output=str(exc),
+            ) from exc
+
+    async def _install_efs_csi(self) -> None:
+        """Install AWS EFS CSI driver via Helm.
+
+        Adds the aws-efs-csi-driver Helm repo and installs the chart
+        into the kube-system namespace.
+
+        Raises:
+            KubernetesError: If Helm repo add or chart install fails.
+        """
+        # Add Helm repo
+        repo_add_command = (
+            "helm repo add aws-efs-csi-driver"
+            " https://kubernetes-sigs.github.io/aws-efs-csi-driver/"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                repo_add_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_efs_csi",
+                    node=None,
+                    command=repo_add_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("helm_repo_added", repo="aws-efs-csi-driver")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_efs_csi",
+                node=None,
+                command=repo_add_command,
+                error_output=str(exc),
+            ) from exc
+
+        # Install EFS CSI driver via Helm
+        helm_command = (
+            "helm install aws-efs-csi-driver"
+            " aws-efs-csi-driver/aws-efs-csi-driver"
+            " -n kube-system"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                helm_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_efs_csi",
+                    node=None,
+                    command=helm_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("efs_csi_driver_installed")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_efs_csi",
+                node=None,
+                command=helm_command,
                 error_output=str(exc),
             ) from exc
 
