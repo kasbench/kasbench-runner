@@ -201,7 +201,7 @@ async def _install_helm_chart(config: RunnerConfig, autoscaler: str, execution_d
     Executes three commands sequentially:
     1. helm repo add {repo_name} {repo_url}
     2. helm repo update
-    3. helm install {release} {repo_name}/{chart} --namespace {ns} --create-namespace --wait --timeout {t}s --set autoscaler={autoscaler} --set execution-data-fs={execution_data_fs}
+    3. helm install {release} {repo_name}/{chart} --namespace {ns} --create-namespace --wait --timeout {t}s --set autoscaler={autoscaler} --set executionDataFs={execution_data_fs}
 
     Args:
         config: Runner configuration with Helm settings.
@@ -222,7 +222,7 @@ async def _install_helm_chart(config: RunnerConfig, autoscaler: str, execution_d
             "--wait",
             "--timeout", f"{config.helm_install_timeout}s",
             "--set", f"autoscaler={autoscaler}",
-            "--set", f"execution-data-fs={execution_data_fs}",
+            "--set", f"executionDataFs={execution_data_fs}",
         ],
     ]
 
