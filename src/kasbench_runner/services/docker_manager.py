@@ -160,6 +160,85 @@ class DockerManager:
 
         logger.info("docker.container_started", container_name=name, image=image)
 
+    async def copy_to_container(
+        self,
+        container_name: str,
+        src_path: str,
+        dest_path: str,
+    ) -> None:
+        """Copy a file or directory from the host into a running container.
+
+        Runs `docker cp <src_path> <container_name>:<dest_path>`.
+        Creates parent directories inside the container before copying.
+
+        Args:
+            container_name: Name of the target container.
+            src_path: Host path to the file or directory to copy.
+            dest_path: Destination path inside the container.
+
+        Raises:
+            DockerError: If the docker cp command fails.
+        """
+        logger.info(
+            "docker.copy_to_container",
+            container_name=container_name,
+            src_path=src_path,
+            dest_path=dest_path,
+        )
+
+        # Ensure parent directory exists inside the container
+        import os
+
+        dest_dir = os.path.dirname(dest_path)
+        if dest_dir:
+            try:
+                mkdir_proc = await asyncio.create_subprocess_exec(
+                    "docker", "exec", container_name,
+                    "mkdir", "-p", dest_dir,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await mkdir_proc.communicate()
+            except OSError as exc:
+                raise DockerError(
+                    container_name=container_name,
+                    image="",
+                    operation="copy_to_container",
+                    error_output=f"Cannot connect to Docker daemon: {exc}",
+                ) from exc
+
+        # Copy file into container
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "docker", "cp", src_path,
+                f"{container_name}:{dest_path}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await process.communicate()
+        except OSError as exc:
+            raise DockerError(
+                container_name=container_name,
+                image="",
+                operation="copy_to_container",
+                error_output=f"Cannot connect to Docker daemon: {exc}",
+            ) from exc
+
+        if process.returncode != 0:
+            error_output = stderr.decode().strip()
+            raise DockerError(
+                container_name=container_name,
+                image="",
+                operation="copy_to_container",
+                error_output=error_output,
+            )
+
+        logger.info(
+            "docker.file_copied",
+            container_name=container_name,
+            dest_path=dest_path,
+        )
+
     async def inspect_container(self, name: str) -> dict:
         """Inspect a Docker container and return its state.
 

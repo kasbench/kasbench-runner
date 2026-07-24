@@ -10,6 +10,7 @@ Requirements: 1.2, 1.7, 2.1–2.5, 3.1–3.3, 4.1–4.14, 5.1–5.13, 6.1–6.12
 from __future__ import annotations
 
 import asyncio
+import os
 
 import httpx
 import structlog
@@ -493,6 +494,16 @@ async def _deploy_load_generators(body: InitializeRequest, config: RunnerConfig)
             env={"RABBITMQ_HOST": "rabbitmq"},
         )
         logger.info("load_generator_started", role=role, host_port=host_port)
+
+    # Step 6.5: Copy kubeconfig to each load generator container
+    local_kube_config = os.path.join(os.environ.get("HOME", "/home/ubuntu"), ".kube", "config")
+    for role in VALID_ROLES:
+        await docker.copy_to_container(
+            container_name=role,
+            src_path=local_kube_config,
+            dest_path="/root/.kube/config",
+        )
+        logger.info("kubeconfig_copied_to_container", role=role)
 
     # Step 6.7–6.10: Health check each load generator
     for role in VALID_ROLES:
