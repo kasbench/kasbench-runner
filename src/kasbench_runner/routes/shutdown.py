@@ -24,6 +24,7 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 SHUTDOWN_NAMESPACES = ["globeco", "elasticsearch", "observability", "monitoring"]
+SHUTDOWN_NAMESPACES = []
 NAMESPACE_DELETION_TIMEOUT = 60  # seconds per namespace
 
 
