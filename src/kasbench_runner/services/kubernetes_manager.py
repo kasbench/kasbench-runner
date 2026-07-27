@@ -91,6 +91,7 @@ class KubernetesManager:
         arm_workers: list[str],
         k8s_version: str,
         cidr: str,
+        autoscaler: str = "none",
     ) -> None:
         """Orchestrate full Kubernetes cluster installation.
 
@@ -104,6 +105,7 @@ class KubernetesManager:
             arm_workers: List of ARM64 worker node hostnames.
             k8s_version: Kubernetes version string (e.g. "1.36.1").
             cidr: Pod network CIDR range (e.g. "10.244.0.0/16").
+            autoscaler: Autoscaler type (e.g. "vpa", "hpa", "none").
 
         Raises:
             KubernetesError: If any installation step fails.
@@ -155,6 +157,10 @@ class KubernetesManager:
 
         # Step 11: Install OpenTelemetry Collector operator
         await self._install_otel_collector()
+
+        # Step 12: Install Vertical Pod Autoscaler (conditional)
+        if autoscaler == "vpa":
+            await self._install_vpa()
 
         logger.info("kubernetes_install_completed", node_count=expected_node_count)
 
@@ -977,5 +983,119 @@ class KubernetesManager:
                 step="install_otel_collector",
                 node=None,
                 command=otel_wait_cmd,
+                error_output=str(exc),
+            ) from exc
+
+    async def _install_vpa(self) -> None:
+        """Install Kubernetes Vertical Pod Autoscaler (VPA).
+
+        Clones the autoscaler repository, checks out the latest VPA release
+        branch, and runs the vpa-up.sh installation script which deploys VPA
+        components into the kube-system namespace.
+
+        Reference: https://github.com/kubernetes/autoscaler/blob/master/vertical-pod-autoscaler/docs/installation.md
+
+        Raises:
+            KubernetesError: If cloning, checkout, or vpa-up.sh fails.
+        """
+        # Clone the autoscaler repository
+        clone_command = (
+            "rm -rf /tmp/autoscaler"
+            " && git clone https://github.com/kubernetes/autoscaler.git /tmp/autoscaler"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                clone_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_vpa",
+                    node=None,
+                    command=clone_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("vpa_repo_cloned")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_vpa",
+                node=None,
+                command=clone_command,
+                error_output=str(exc),
+            ) from exc
+
+        # Run vpa-up.sh from the vertical-pod-autoscaler directory
+        vpa_up_command = "cd /tmp/autoscaler/vertical-pod-autoscaler && ./hack/vpa-up.sh"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                vpa_up_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_vpa",
+                    node=None,
+                    command=vpa_up_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("vpa_installed")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_vpa",
+                node=None,
+                command=vpa_up_command,
+                error_output=str(exc),
+            ) from exc
+
+        # Wait for VPA components to be ready in kube-system
+        wait_command = (
+            "kubectl wait --for=condition=Available"
+            " deployment/vpa-admission-controller"
+            " deployment/vpa-recommender"
+            " deployment/vpa-updater"
+            " -n kube-system --timeout=300s"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                wait_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_vpa",
+                    node=None,
+                    command=wait_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("vpa_components_ready")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_vpa",
+                node=None,
+                command=wait_command,
                 error_output=str(exc),
             ) from exc

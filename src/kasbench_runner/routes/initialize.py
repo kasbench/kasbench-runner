@@ -104,6 +104,7 @@ async def initialize(body: InitializeRequest, request: Request) -> JSONResponse:
                 arm_workers=body.arm_worker_nodes,
                 k8s_version=body.kubernetes_version,
                 cidr=body.cluster_cidr_range,
+                autoscaler=body.autoscaler,
             )
             state.kubernetes_installed = True
         except Exception as exc:
