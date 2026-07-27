@@ -531,6 +531,10 @@ class KubernetesManager:
             " aws-ebs-csi-driver/aws-ebs-csi-driver"
             " --namespace kube-system"
             " --set controller.replicaCount=1"
+            # " --set storageClasses[0].name=ebs-sc" 
+            # " --set storageClasses[0].reclaimPolicy=Delete" 
+            # " --set storageClasses[0].volumeBindingMode=WaitForFirstConsumer" 
+            # " --set storageClasses[0].parameters.type=gp3"
         )
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -572,6 +576,7 @@ class KubernetesManager:
             "parameters:\\n"
             "  type: gp3\\n"
             "  fsType: ext4"
+            "reclaimPolicy: Delete"
         )
         sc_command = f'echo -e "{storage_class_yaml}" | kubectl apply -f -'
         try:

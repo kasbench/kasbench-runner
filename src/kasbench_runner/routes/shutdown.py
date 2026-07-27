@@ -1,6 +1,6 @@
 """POST /shutdown endpoint for the KASBench Benchmark Runner.
 
-Deletes Kubernetes namespaces sequentially to release claimed storage volumes
+Performs Helm uninstalls of GlobeCo and Prometheus releases to free EBS volumes
 before cluster destruction.
 
 Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6
@@ -11,61 +11,101 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 
-import kr8s
 import structlog
 from fastapi import APIRouter, Request
 
 from kasbench_runner.errors import build_error_response
-from kasbench_runner.models.responses import NamespaceResult, ShutdownResponse
+from kasbench_runner.models.responses import HelmUninstallResult, ShutdownResponse
 from kasbench_runner.models.state import BenchmarkState, BenchmarkStatus
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
-SHUTDOWN_NAMESPACES = ["globeco", "elasticsearch", "observability", "monitoring"]
-SHUTDOWN_NAMESPACES = []
-NAMESPACE_DELETION_TIMEOUT = 60  # seconds per namespace
+# Helm releases to uninstall (in order): GlobeCo first, then Prometheus
+HELM_RELEASES = [
+    {"release": "globeco", "namespace": "globeco"},
+    {"release": "prometheus", "namespace": "monitoring"},
+]
+
+HELM_UNINSTALL_TIMEOUT = 120  # seconds per release
 
 
-async def _delete_namespace(name: str) -> NamespaceResult:
-    """Delete a single Kubernetes namespace with a 60s timeout.
+async def _helm_uninstall(release: str, namespace: str) -> HelmUninstallResult:
+    """Uninstall a single Helm release with a timeout.
 
-    Returns a NamespaceResult indicating success or failure with error detail.
+    Returns a HelmUninstallResult indicating success or failure with error detail.
     """
+    cmd = ["helm", "uninstall", release, "--namespace", namespace]
+
     try:
 
-        async def _do_delete() -> None:
-            api = await kr8s.asyncio.api()
-            namespaces = [ns async for ns in api.get("namespaces", field_selector=f"metadata.name={name}")]
-            if namespaces:
-                ns = namespaces[0]
-                await ns.delete()
-                logger.info("namespace_deletion_initiated", namespace=name)
-            else:
-                logger.info("namespace_not_found_skipping", namespace=name)
+        async def _do_uninstall() -> tuple[int, str, str]:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            return proc.returncode, stdout.decode().strip(), stderr.decode().strip()
 
-        await asyncio.wait_for(_do_delete(), timeout=NAMESPACE_DELETION_TIMEOUT)
-        return NamespaceResult(namespace=name, status="deleted")
+        returncode, stdout, stderr = await asyncio.wait_for(
+            _do_uninstall(), timeout=HELM_UNINSTALL_TIMEOUT
+        )
+
+        if returncode != 0:
+            logger.warning(
+                "helm_uninstall_failed",
+                release=release,
+                namespace=namespace,
+                exit_code=returncode,
+                stderr=stderr,
+            )
+            return HelmUninstallResult(
+                release=release,
+                namespace=namespace,
+                status="failed",
+                error=stderr or f"Exit code {returncode}",
+            )
+
+        logger.info(
+            "helm_uninstall_success",
+            release=release,
+            namespace=namespace,
+            stdout=stdout[:200],
+        )
+        return HelmUninstallResult(
+            release=release, namespace=namespace, status="uninstalled"
+        )
 
     except asyncio.TimeoutError:
-        error_msg = "Namespace deletion timed out after 60 seconds"
-        logger.warning("namespace_deletion_timeout", namespace=name)
-        return NamespaceResult(namespace=name, status="failed", error=error_msg)
+        error_msg = f"Helm uninstall timed out after {HELM_UNINSTALL_TIMEOUT} seconds"
+        logger.warning(
+            "helm_uninstall_timeout", release=release, namespace=namespace
+        )
+        return HelmUninstallResult(
+            release=release, namespace=namespace, status="failed", error=error_msg
+        )
 
     except Exception as exc:
         error_msg = str(exc)
-        logger.warning("namespace_deletion_failed", namespace=name, error=error_msg)
-        return NamespaceResult(namespace=name, status="failed", error=error_msg)
+        logger.warning(
+            "helm_uninstall_error",
+            release=release,
+            namespace=namespace,
+            error=error_msg,
+        )
+        return HelmUninstallResult(
+            release=release, namespace=namespace, status="failed", error=error_msg
+        )
 
 
 @router.post("/shutdown")
 async def shutdown(request: Request) -> ShutdownResponse:
-    """Delete benchmark namespaces sequentially to release storage volumes.
+    """Uninstall Helm releases to free EBS volumes before cluster destruction.
 
-    Deletes namespaces in order: globeco, elasticsearch, observability, monitoring.
-    Each deletion has a 60s timeout. Failures are recorded but do not stop
-    processing of remaining namespaces.
+    Uninstalls GlobeCo first, then Prometheus. Each uninstall has a timeout.
+    Failures are recorded but do not stop processing of remaining releases.
     """
     state: BenchmarkState = request.app.state.benchmark_state
 
@@ -87,11 +127,15 @@ async def shutdown(request: Request) -> ShutdownResponse:
             current_status=state.status.value,
         )
 
-    # Req 9.1, 9.2: Delete namespaces sequentially with 60s timeout each
-    results: list[NamespaceResult] = []
-    for ns_name in SHUTDOWN_NAMESPACES:
-        logger.info("deleting_namespace", namespace=ns_name)
-        result = await _delete_namespace(ns_name)
+    # Uninstall Helm releases sequentially (GlobeCo then Prometheus)
+    results: list[HelmUninstallResult] = []
+    for rel in HELM_RELEASES:
+        logger.info(
+            "helm_uninstall_starting",
+            release=rel["release"],
+            namespace=rel["namespace"],
+        )
+        result = await _helm_uninstall(rel["release"], rel["namespace"])
         results.append(result)
 
     timestamp = datetime.now(timezone.utc)
@@ -102,5 +146,5 @@ async def shutdown(request: Request) -> ShutdownResponse:
         timestamp=timestamp.isoformat(),
     )
 
-    # Req 9.4: Return 200 with per-namespace results and timestamp
+    # Req 9.4: Return 200 with per-release results and timestamp
     return ShutdownResponse(results=results, timestamp=timestamp)

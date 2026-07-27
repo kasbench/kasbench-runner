@@ -38,18 +38,19 @@ class ExportResponse(BaseModel):
     model_config = {"populate_by_name": True, "serialize_by_alias": True}
 
 
-class NamespaceResult(BaseModel):
-    """Per-namespace shutdown result."""
+class HelmUninstallResult(BaseModel):
+    """Per-release Helm uninstall result."""
 
+    release: str
     namespace: str
-    status: str  # "deleted" or "failed"
+    status: str  # "uninstalled" or "failed"
     error: Optional[str] = None
 
 
 class ShutdownResponse(BaseModel):
     """POST /shutdown response."""
 
-    results: list[NamespaceResult]
+    results: list[HelmUninstallResult]
     timestamp: datetime
 
     model_config = {"populate_by_name": True, "serialize_by_alias": True}
