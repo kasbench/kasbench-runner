@@ -252,10 +252,10 @@ class RoleParameters:
 
 
 ROLE_PARAMS: dict[str, RoleParameters] = {
-    "back-office": RoleParameters(100, 100, 10),
-    "portfolio-manager": RoleParameters(100, 100, 10),
-    "trader": RoleParameters(100, 100, 10),
-    "investor": RoleParameters(10, 100, 10),
+    "back-office": RoleParameters(100, 90, 10),
+    "portfolio-manager": RoleParameters(100, 90, 10),
+    "trader": RoleParameters(100, 90, 10),
+    "investor": RoleParameters(10, 90, 10),
     "it-operations": RoleParameters(100, 100, 1),
 }
 
