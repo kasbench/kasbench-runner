@@ -159,8 +159,12 @@ class KubernetesManager:
         await self._install_otel_collector()
 
         # Step 12: Install Vertical Pod Autoscaler (conditional)
-        if autoscaler == "vpa":
+        if autoscaler.lower() == "vpa":
             await self._install_vpa()
+
+        # Step 13: Install KEDA (conditional)
+        if autoscaler.lower() == "keda":
+            await self._install_keda()
 
         logger.info("kubernetes_install_completed", node_count=expected_node_count)
 
@@ -1095,6 +1099,120 @@ class KubernetesManager:
         except Exception as exc:
             raise KubernetesError(
                 step="install_vpa",
+                node=None,
+                command=wait_command,
+                error_output=str(exc),
+            ) from exc
+
+    async def _install_keda(self) -> None:
+        """Install KEDA (Kubernetes Event-Driven Autoscaling) via Helm.
+
+        Adds the kedacore Helm repository, updates repos, and installs the
+        KEDA Helm chart (which includes CRDs) into the keda namespace.
+
+        Reference: https://keda.sh/docs/2.20/deploy/
+
+        Raises:
+            KubernetesError: If Helm repo add/update or chart install fails.
+        """
+        # Add KEDA Helm repo and update
+        repo_add_command = (
+            "helm repo add kedacore https://kedacore.github.io/charts"
+            " && helm repo update"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                repo_add_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_keda",
+                    node=None,
+                    command=repo_add_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("helm_repo_added", repo="kedacore")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_keda",
+                node=None,
+                command=repo_add_command,
+                error_output=str(exc),
+            ) from exc
+
+        # Install KEDA chart (includes CRDs)
+        helm_command = (
+            "helm install keda kedacore/keda"
+            " --namespace keda --create-namespace"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                helm_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_keda",
+                    node=None,
+                    command=helm_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("keda_helm_installed")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_keda",
+                node=None,
+                command=helm_command,
+                error_output=str(exc),
+            ) from exc
+
+        # Wait for KEDA operator to be ready
+        wait_command = (
+            "kubectl wait --for=condition=Available"
+            " deployment/keda-operator"
+            " -n keda --timeout=300s"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                wait_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_keda",
+                    node=None,
+                    command=wait_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("keda_installed")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_keda",
                 node=None,
                 command=wait_command,
                 error_output=str(exc),
