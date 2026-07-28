@@ -144,10 +144,10 @@ class KubernetesManager:
         await self._create_namespaces()
 
         # Step 8: Install EBS CSI driver and StorageClass
-        # await self._install_ebs_csi()
+        await self._install_ebs_csi()
 
         # Step 8.5: Install EFS CSI driver
-        # await self._install_efs_csi()
+        await self._install_efs_csi()
 
         # Step 9: Install Envoy Gateway
         # await self._install_envoy_gateway()
