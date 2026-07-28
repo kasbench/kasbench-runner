@@ -585,7 +585,7 @@ class KubernetesManager:
             "volumeBindingMode: WaitForFirstConsumer\\n"
             "parameters:\\n"
             "  type: gp3\\n"
-            "  fsType: ext4"
+            "  fsType: ext4\\n"
             "reclaimPolicy: Delete"
         )
         sc_command = f'echo -e "{storage_class_yaml}" | kubectl apply -f -'
