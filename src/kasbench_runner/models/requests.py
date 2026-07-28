@@ -82,12 +82,43 @@ class RolloutAllRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class RoleParamsOverride(BaseModel):
+    """Per-role parameter overrides for load generation."""
+
+    base_load_intensity: int = Field(..., alias="baseLoadIntensity", ge=1)
+    base_delay_percentage: int = Field(..., alias="baseDelayPercentage", ge=0, le=100)
+    spawn_rate: int = Field(..., alias="spawnRate", ge=1)
+
+    model_config = {"populate_by_name": True}
+
+
 class StartRequest(BaseModel):
     """POST /start request body (optional)."""
 
     benchmark_length_minutes: int | None = Field(
         default=None, alias="benchmarkLengthMinutes", ge=1
     )
+    role_params: dict[str, RoleParamsOverride] | None = Field(
+        default=None, alias="roleParams"
+    )
+
+    @field_validator("role_params", mode="after")
+    @classmethod
+    def validate_role_params_keys(
+        cls, v: dict[str, RoleParamsOverride] | None
+    ) -> dict[str, RoleParamsOverride] | None:
+        """Ensure all keys in roleParams are valid role names."""
+        if v is None:
+            return v
+        from kasbench_runner.config import VALID_ROLES
+
+        invalid = set(v.keys()) - set(VALID_ROLES)
+        if invalid:
+            raise ValueError(
+                f"Invalid role(s): {sorted(invalid)}. "
+                f"Valid roles are: {list(VALID_ROLES)}"
+            )
+        return v
 
     model_config = {"extra": "ignore", "populate_by_name": True}
 

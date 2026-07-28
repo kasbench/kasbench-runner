@@ -74,14 +74,27 @@ async def start_benchmark(request: Request, body: StartRequest | None = None) ->
 
     lg_client = LoadGeneratorClient()
 
+    # Build effective role params: override takes precedence over defaults
+    role_overrides = body.role_params if body and body.role_params else {}
+
     async def start_role(role: str) -> None:
-        params = ROLE_PARAMS[role]
+        if role in role_overrides:
+            override = role_overrides[role]
+            base_load_intensity = override.base_load_intensity
+            base_delay_percentage = override.base_delay_percentage
+            spawn_rate = override.spawn_rate
+        else:
+            params = ROLE_PARAMS[role]
+            base_load_intensity = params.base_load_intensity
+            base_delay_percentage = params.base_delay_percentage
+            spawn_rate = params.spawn_rate
+
         payload = {
             "Role": role,
             "BenchmarkLengthMinutes": benchmark_length_minutes,
-            "BaseLoadIntensity": params.base_load_intensity,
-            "SpawnRate": params.spawn_rate,
-            "BaseDelayPercentage": params.base_delay_percentage,
+            "BaseLoadIntensity": base_load_intensity,
+            "SpawnRate": spawn_rate,
+            "BaseDelayPercentage": base_delay_percentage,
             "KasbenchUrl": kasbench_url,
         }
         await lg_client.start(role, payload)

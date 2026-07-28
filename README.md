@@ -150,6 +150,25 @@ Start the benchmark run across all load generators.
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `benchmarkLengthMinutes` | int | no | value from `/initialize` `runDurationMinutes` | Override the benchmark duration (minutes, ≥ 1). Primarily used for testing. |
+| `roleParams` | object | no | built-in defaults | Per-role load generation parameter overrides. Keys are role names; values are objects with `baseLoadIntensity`, `baseDelayPercentage`, and `spawnRate`. Roles not included use the defaults. |
+
+**`roleParams` value object:**
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `baseLoadIntensity` | int | yes | ≥ 1 | Number of concurrent simulated users |
+| `baseDelayPercentage` | int | yes | 0–100 | Think-time delay percentage |
+| `spawnRate` | int | yes | ≥ 1 | Users spawned per second during ramp-up |
+
+**Default role parameters (used when `roleParams` is omitted or a role is not overridden):**
+
+| Role | baseLoadIntensity | baseDelayPercentage | spawnRate |
+|------|-------------------|---------------------|-----------|
+| `back-office` | 100 | 80 | 10 |
+| `portfolio-manager` | 100 | 80 | 10 |
+| `trader` | 100 | 80 | 10 |
+| `investor` | 10 | 80 | 10 |
+| `it-operations` | 100 | 100 | 1 |
 
 **Responses:** `200` with `startTime`, `409` not initialized or already running, `422` validation error, `500` generator start failure.
 
@@ -635,6 +654,26 @@ curl -s -X POST http://localhost:8080/start | jq .
 curl -s -X POST http://localhost:8080/start \
   -H "Content-Type: application/json" \
   -d '{"benchmarkLengthMinutes": 1}' | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "startTime": "2026-06-10T14:30:00.123456+00:00"
+}
+```
+
+### POST /start (with role parameter overrides)
+
+```bash
+curl -s -X POST http://localhost:8080/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "roleParams": {
+      "investor": {"baseLoadIntensity": 50, "baseDelayPercentage": 60, "spawnRate": 5},
+      "trader": {"baseLoadIntensity": 200, "baseDelayPercentage": 90, "spawnRate": 20}
+    }
+  }' | jq .
 ```
 
 **Expected response (200):**
