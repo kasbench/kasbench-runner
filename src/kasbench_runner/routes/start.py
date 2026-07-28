@@ -16,6 +16,7 @@ from fastapi import APIRouter, Request
 
 from kasbench_runner.config import ROLE_PARAMS, VALID_ROLES, RunnerConfig
 from kasbench_runner.errors import LoadGeneratorError, build_error_response
+from kasbench_runner.models.requests import StartRequest
 from kasbench_runner.models.responses import StartResponse
 from kasbench_runner.models.state import BenchmarkState, BenchmarkStatus
 from kasbench_runner.services.health_checker import check_health
@@ -27,7 +28,7 @@ router = APIRouter()
 
 
 @router.post("/start")
-async def start_benchmark(request: Request) -> StartResponse:
+async def start_benchmark(request: Request, body: StartRequest | None = None) -> StartResponse:
     """Start the benchmark run across all load generators.
 
     Validates state guards, sends concurrent /start requests to all five
@@ -64,13 +65,20 @@ async def start_benchmark(request: Request) -> StartResponse:
     init_config = state.config
     kasbench_url = f"{init_config.globeco_url}:{init_config.globeco_port}"
 
+    # Use override if provided, otherwise fall back to init_config value
+    benchmark_length_minutes = (
+        body.benchmark_length_minutes
+        if body and body.benchmark_length_minutes is not None
+        else init_config.run_duration_minutes
+    )
+
     lg_client = LoadGeneratorClient()
 
     async def start_role(role: str) -> None:
         params = ROLE_PARAMS[role]
         payload = {
             "Role": role,
-            "BenchmarkLengthMinutes": init_config.run_duration_minutes,
+            "BenchmarkLengthMinutes": benchmark_length_minutes,
             "BaseLoadIntensity": params.base_load_intensity,
             "SpawnRate": params.spawn_rate,
             "BaseDelayPercentage": params.base_delay_percentage,

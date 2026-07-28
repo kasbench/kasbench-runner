@@ -82,6 +82,16 @@ class RolloutAllRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class StartRequest(BaseModel):
+    """POST /start request body (optional)."""
+
+    benchmark_length_minutes: int | None = Field(
+        default=None, alias="benchmarkLengthMinutes", ge=1
+    )
+
+    model_config = {"extra": "ignore", "populate_by_name": True}
+
+
 class SnapshotRequest(BaseModel):
     """POST /snapshot request body."""
 

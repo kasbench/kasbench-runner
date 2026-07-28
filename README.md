@@ -145,7 +145,13 @@ Initialize the benchmark environment: reserve S3 trial, configure Kubernetes, de
 
 Start the benchmark run across all load generators.
 
-**Responses:** `200` with `startTime`, `409` not initialized or already running, `500` generator start failure.
+**Request Body (optional):**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `benchmarkLengthMinutes` | int | no | value from `/initialize` `runDurationMinutes` | Override the benchmark duration (minutes, ≥ 1). Primarily used for testing. |
+
+**Responses:** `200` with `startTime`, `409` not initialized or already running, `422` validation error, `500` generator start failure.
 
 ---
 
@@ -614,6 +620,21 @@ curl -s -X POST http://localhost:8080/initialize \
 
 ```bash
 curl -s -X POST http://localhost:8080/start | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "startTime": "2026-06-10T14:30:00.123456+00:00"
+}
+```
+
+### POST /start (with duration override for testing)
+
+```bash
+curl -s -X POST http://localhost:8080/start \
+  -H "Content-Type: application/json" \
+  -d '{"benchmarkLengthMinutes": 1}' | jq .
 ```
 
 **Expected response (200):**
