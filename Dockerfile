@@ -7,12 +7,14 @@ FROM python:3.13-slim AS base
 # - kubectl: for applying manifests
 # - helm: for installing Helm charts (EBS CSI driver)
 # - curl: for fetching install scripts
+# - git: for cloning VPA autoscaler repo during install
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-client \
     curl \
     gnupg \
     apt-transport-https \
     ca-certificates \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI
