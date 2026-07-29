@@ -100,6 +100,68 @@ async def _helm_uninstall(release: str, namespace: str) -> HelmUninstallResult:
         )
 
 
+PVC_DELETE_TIMEOUT = 60  # seconds
+
+
+async def _delete_alertmanager_pvc() -> None:
+    """Best-effort deletion of the Prometheus Alertmanager PVC.
+
+    This PVC (storage-prometheus-alertmanager-0 in the monitoring namespace)
+    is not cleaned up automatically by `helm uninstall`. We attempt to delete
+    it here so the underlying EBS volume is released before cluster teardown.
+    Failures are logged but never propagate — shutdown proceeds regardless.
+    """
+    pvc_name = "storage-prometheus-alertmanager-0"
+    namespace = "monitoring"
+    cmd = ["kubectl", "delete", "pvc", pvc_name, "--namespace", namespace]
+
+    try:
+
+        async def _do_delete() -> tuple[int, str, str]:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            return proc.returncode, stdout.decode().strip(), stderr.decode().strip()
+
+        returncode, stdout, stderr = await asyncio.wait_for(
+            _do_delete(), timeout=PVC_DELETE_TIMEOUT
+        )
+
+        if returncode == 0:
+            logger.info(
+                "pvc_delete_success",
+                pvc=pvc_name,
+                namespace=namespace,
+                stdout=stdout[:200],
+            )
+        else:
+            logger.warning(
+                "pvc_delete_failed",
+                pvc=pvc_name,
+                namespace=namespace,
+                exit_code=returncode,
+                stderr=stderr,
+            )
+
+    except asyncio.TimeoutError:
+        logger.warning(
+            "pvc_delete_timeout",
+            pvc=pvc_name,
+            namespace=namespace,
+            timeout=PVC_DELETE_TIMEOUT,
+        )
+    except Exception as exc:
+        logger.warning(
+            "pvc_delete_error",
+            pvc=pvc_name,
+            namespace=namespace,
+            error=str(exc),
+        )
+
+
 @router.post("/shutdown")
 async def shutdown(request: Request) -> ShutdownResponse:
     """Uninstall Helm releases to free EBS volumes before cluster destruction.
@@ -137,6 +199,10 @@ async def shutdown(request: Request) -> ShutdownResponse:
         )
         result = await _helm_uninstall(rel["release"], rel["namespace"])
         results.append(result)
+
+    # Best-effort cleanup of the Prometheus Alertmanager PVC that doesn't
+    # get removed automatically by the Helm uninstall.
+    await _delete_alertmanager_pvc()
 
     timestamp = datetime.now(timezone.utc)
 
