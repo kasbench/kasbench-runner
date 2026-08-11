@@ -8,6 +8,7 @@ Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 5.11
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import tarfile
@@ -146,6 +147,49 @@ async def post_prometheus_tsdb_export(
     temp_dir = tempfile.mkdtemp(prefix="tsdb-snapshot-")
     snapshot_path = f"/data/snapshots/{snapshot_name}"
 
+    # Pre-check: verify the snapshot directory exists in the pod
+    check_cmd = ["test", "-d", f"/data/snapshots/{snapshot_name}"]
+    try:
+        await asyncio.wait_for(
+            pod.exec(check_cmd, container="prometheus-server", check=True),
+            timeout=30.0,
+        )
+    except asyncio.TimeoutError:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        log.error(
+            "snapshot_dir_check_timeout",
+            pod_name=pod.name,
+            snapshot_path=snapshot_path,
+        )
+        return build_error_response(
+            error="snapshot_dir_check_timeout",
+            message=(
+                f"Timed out (30s) checking if snapshot directory exists "
+                f"in pod '{pod.name}'. The pod may be unresponsive or overloaded."
+            ),
+            status_code=500,
+            pod_name=pod.name,
+            snapshot_path=snapshot_path,
+        )
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        log.error(
+            "snapshot_dir_missing",
+            snapshot_path=snapshot_path,
+            pod_name=pod.name,
+        )
+        return build_error_response(
+            error="snapshot_dir_not_found",
+            message=(
+                f"Snapshot directory '{snapshot_path}' does not exist in "
+                f"pod '{pod.name}'. The snapshot may have failed to write "
+                f"(check disk space on the Prometheus PV)."
+            ),
+            status_code=500,
+            pod_name=pod.name,
+            snapshot_path=snapshot_path,
+        )
+
     try:
         # Use pod exec to tar the snapshot and stream it locally
         # The tar command packs the snapshot directory; we unpack locally
@@ -155,11 +199,14 @@ async def post_prometheus_tsdb_export(
         # data issues with WebSocket-based exec capture
         tar_file_path = os.path.join(temp_dir, "_snapshot.tar")
         with open(tar_file_path, "wb") as tar_out:
-            exec_result = await pod.exec(
-                tar_command,
-                container="prometheus-server",
-                stdout=tar_out,
-                check=True,
+            await asyncio.wait_for(
+                pod.exec(
+                    tar_command,
+                    container="prometheus-server",
+                    stdout=tar_out,
+                    check=True,
+                ),
+                timeout=300.0,
             )
 
         # Extract the tar archive
@@ -170,16 +217,55 @@ async def post_prometheus_tsdb_export(
         os.remove(tar_file_path)
 
         log.info("snapshot_copied_to_local", temp_dir=temp_dir)
-    except Exception as exc:
-        # Clean up temp dir on failure
+    except asyncio.TimeoutError:
         shutil.rmtree(temp_dir, ignore_errors=True)
-        log.error("snapshot_copy_failed", error=str(exc), pod_name=pod.name)
+        log.error(
+            "snapshot_copy_timeout",
+            pod_name=pod.name,
+            snapshot_path=snapshot_path,
+            timeout_seconds=300,
+        )
         return build_error_response(
-            error="snapshot_copy_failed",
-            message=f"Failed to copy snapshot from pod '{pod.name}': {exc}",
+            error="snapshot_copy_timeout",
+            message=(
+                f"Timed out (300s) copying snapshot from pod '{pod.name}'. "
+                f"The TSDB snapshot may be too large or the pod is under heavy I/O. "
+                f"Snapshot path: {snapshot_path}"
+            ),
             status_code=500,
             pod_name=pod.name,
             snapshot_path=snapshot_path,
+            timeout_seconds=300,
+        )
+    except Exception as exc:
+        # Clean up temp dir on failure
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+        # Unwrap ExceptionGroup / BaseExceptionGroup to surface the real cause
+        error_detail = str(exc)
+        if isinstance(exc, BaseExceptionGroup):
+            sub_errors = [
+                f"{type(e).__name__}: {e}" for e in exc.exceptions
+            ]
+            error_detail = (
+                f"{exc} | sub-exceptions: {'; '.join(sub_errors)}"
+            )
+
+        log.error(
+            "snapshot_copy_failed",
+            error=error_detail,
+            error_type=type(exc).__name__,
+            pod_name=pod.name,
+            snapshot_path=snapshot_path,
+            snapshot_name=snapshot_name,
+        )
+        return build_error_response(
+            error="snapshot_copy_failed",
+            message=f"Failed to copy snapshot from pod '{pod.name}': {error_detail}",
+            status_code=500,
+            pod_name=pod.name,
+            snapshot_path=snapshot_path,
+            error_type=type(exc).__name__,
         )
 
     # Step 5: Upload directory to S3
