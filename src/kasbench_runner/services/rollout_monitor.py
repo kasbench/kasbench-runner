@@ -238,6 +238,7 @@ class RolloutMonitor:
         """Check if deployment meets success criteria.
 
         Success requires:
+        - If replicas == 0: considered complete (scaled-to-zero is a valid desired state)
         - updatedReplicas == replicas
         - readyReplicas == replicas
         - Progressing condition reason == "NewReplicaSetAvailable"
@@ -250,8 +251,12 @@ class RolloutMonitor:
             True if rollout is complete, False otherwise.
         """
         replicas = spec.get("replicas", 0)
-        if replicas is None or replicas == 0:
-            return False
+        if replicas is None:
+            replicas = 0
+
+        # A deployment scaled to zero is in its desired state
+        if replicas == 0:
+            return True
 
         updated_replicas = status.get("updatedReplicas", 0) or 0
         ready_replicas = status.get("readyReplicas", 0) or 0
@@ -506,6 +511,7 @@ class RolloutMonitor:
         """Check if statefulset meets readiness criteria.
 
         Success requires:
+        - If replicas == 0: considered ready (scaled-to-zero is a valid desired state)
         - readyReplicas == replicas
         - updatedReplicas == replicas (if updateStrategy is RollingUpdate)
         - currentRevision == updateRevision (partition rollout complete)
@@ -518,8 +524,12 @@ class RolloutMonitor:
             True if statefulset is fully ready, False otherwise.
         """
         replicas = spec.get("replicas", 0)
-        if replicas is None or replicas == 0:
-            return False
+        if replicas is None:
+            replicas = 0
+
+        # A statefulset scaled to zero is in its desired state
+        if replicas == 0:
+            return True
 
         ready_replicas = status.get("readyReplicas", 0) or 0
         updated_replicas = status.get("updatedReplicas", 0) or 0
