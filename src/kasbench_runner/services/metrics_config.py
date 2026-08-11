@@ -538,10 +538,16 @@ GAUGE_METRICS: list[MetricDefinition] = [
         metric_type="gauge",
     ),
     MetricDefinition(
-        metric="kafka_topic_partitions",
-        description="kafka_topic_partitions gauge.",
-        query="kafka_topic_partitions",
-        name="kafka_topic_partitions",
+        metric="kube_deployment_spec_replicas",
+        description="kube_deployment_spec_replicas gauge.",
+        query='sum by (deployment) (kube_deployment_spec_replicas{namespace="globeco"})',
+        name="kube_deployment_spec_replicas",
+        metric_type="gauge",
+    ),MetricDefinition(
+        metric="kube_deployment_status_replicas_available",
+        description="kube_deployment_status_replicas_available gauge.",
+        query='sum by (deployment) (kube_deployment_status_replicas_available{namespace="globeco"})',
+        name="kube_deployment_status_replicas_available",
         metric_type="gauge",
     ),
 ]
