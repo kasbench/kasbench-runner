@@ -83,6 +83,16 @@ DEFAULT_ROLLOUT_DEPLOYMENTS: list[dict[str, str]] = [
 # Default statefulset list for /rollout/all
 # Loaded from ROLLOUT_STATEFULSETS env var (JSON) or defaults below
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Default scale-to-zero deployments (skipped during rollout when autoscaler=keda)
+# Loaded from SCALE_TO_ZERO_DEPLOYMENTS env var (JSON) or defaults below
+# ---------------------------------------------------------------------------
+DEFAULT_SCALE_TO_ZERO_DEPLOYMENTS: list[dict[str, str]] = [
+    {"name": "globeco-confirmation-service", "namespace": "globeco"},
+    {"name": "globeco-fix-engine", "namespace": "globeco"},
+]
+
+
 DEFAULT_ROLLOUT_STATEFULSETS: list[dict[str, str]] = [
     # globeco namespace (12)
     {"name": "globeco-allocation-service-postgresql", "namespace": "globeco"},
@@ -143,6 +153,7 @@ class RunnerConfig(BaseSettings):
     # Rollout configuration
     rollout_deployments_json: str = Field(default="", alias="ROLLOUT_DEPLOYMENTS")
     rollout_statefulsets_json: str = Field(default="", alias="ROLLOUT_STATEFULSETS")
+    scale_to_zero_deployments_json: str = Field(default="", alias="SCALE_TO_ZERO_DEPLOYMENTS")
 
     model_config = {"env_prefix": "", "case_sensitive": False, "populate_by_name": True}
 
@@ -218,6 +229,20 @@ class RunnerConfig(BaseSettings):
         return [
             StatefulSetSpec(name=s["name"], namespace=s["namespace"])
             for s in DEFAULT_ROLLOUT_STATEFULSETS
+        ]
+
+    @property
+    def scale_to_zero_deployments(self) -> list[DeploymentSpec]:
+        """Parse scale-to-zero deployment list from JSON env var or use defaults."""
+        if self.scale_to_zero_deployments_json:
+            parsed = json.loads(self.scale_to_zero_deployments_json)
+            return [
+                DeploymentSpec(name=d["name"], namespace=d["namespace"])
+                for d in parsed
+            ]
+        return [
+            DeploymentSpec(name=d["name"], namespace=d["namespace"])
+            for d in DEFAULT_SCALE_TO_ZERO_DEPLOYMENTS
         ]
 
 

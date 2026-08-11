@@ -78,8 +78,23 @@ async def wait_for_all_rollouts(
 ) -> RolloutAllResponse:
     """Wait for all configured deployments and statefulsets to roll out."""
     config = request.app.state.config
+    state = request.app.state.benchmark_state
     deployments = config.rollout_deployments
     statefulsets = config.rollout_statefulsets
+
+    # When autoscaler is KEDA, exclude scale-to-zero deployments from rollout checks
+    if state.config and state.config.autoscaler.lower() == "keda":
+        scale_to_zero = set(
+            (d.name, d.namespace) for d in config.scale_to_zero_deployments
+        )
+        skipped = [d for d in deployments if (d.name, d.namespace) in scale_to_zero]
+        deployments = [d for d in deployments if (d.name, d.namespace) not in scale_to_zero]
+        if skipped:
+            logger.info(
+                "rollout_all_skip_scale_to_zero",
+                skipped=[f"{d.namespace}/{d.name}" for d in skipped],
+                reason="autoscaler=keda",
+            )
 
     log = logger.bind(
         deployment_count=len(deployments),
