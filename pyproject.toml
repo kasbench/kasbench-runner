@@ -12,7 +12,7 @@ dependencies = [
     "boto3>=1.37",
     "kr8s>=0.19",
     "structlog>=25.1",
-    "pydantic-settings>=2.8",
+    "pydantic-settings>=2.14.2",
     "pandas>=2.2",
     "pyarrow>=19.0",
 ]
