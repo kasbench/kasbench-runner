@@ -21,6 +21,7 @@ from kasbench_runner.models.state import BenchmarkState
 from kasbench_runner.routes import (
     abort,
     db,
+    images,
     initialize,
     metadata,
     metrics,
@@ -94,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(rollout.router)
     app.include_router(roundtrip.router)
     app.include_router(snapshot.router)
+    app.include_router(images.router)
 
     # Register global exception handler for RunnerError
     @app.exception_handler(RunnerError)
