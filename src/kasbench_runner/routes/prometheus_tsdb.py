@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-import tarfile
 import tempfile
 from datetime import datetime, timezone
 
@@ -147,74 +146,62 @@ async def post_prometheus_tsdb_export(
     temp_dir = tempfile.mkdtemp(prefix="tsdb-snapshot-")
     snapshot_path = f"/data/snapshots/{snapshot_name}"
 
-    # Pre-check: verify the snapshot directory exists in the pod
-    check_cmd = ["test", "-d", f"/data/snapshots/{snapshot_name}"]
+    # Use kubectl cp to copy the snapshot directory from the pod.
+    # This avoids kr8s pod.exec WebSocket instability with large binary
+    # transfers (WebSocketNetworkError on big tar streams).
     try:
-        await asyncio.wait_for(
-            pod.exec(check_cmd, container="prometheus-server", check=True),
-            timeout=30.0,
-        )
-    except asyncio.TimeoutError:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        log.error(
-            "snapshot_dir_check_timeout",
+        # kubectl cp uses tar under the hood but handles WebSocket framing
+        # more robustly than the kr8s library for large payloads.
+        # Format: kubectl cp <namespace>/<pod>:<path> <local_path> -c <container>
+        kubectl_cp_cmd = [
+            "kubectl", "cp",
+            f"{_PROMETHEUS_NAMESPACE}/{pod.name}:{snapshot_path}",
+            os.path.join(temp_dir, snapshot_name),
+            "-c", "prometheus-server",
+            "--retries", "3",
+        ]
+
+        log.info(
+            "snapshot_copy_start",
             pod_name=pod.name,
             snapshot_path=snapshot_path,
-        )
-        return build_error_response(
-            error="snapshot_dir_check_timeout",
-            message=(
-                f"Timed out (30s) checking if snapshot directory exists "
-                f"in pod '{pod.name}'. The pod may be unresponsive or overloaded."
-            ),
-            status_code=500,
-            pod_name=pod.name,
-            snapshot_path=snapshot_path,
-        )
-    except Exception:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        log.error(
-            "snapshot_dir_missing",
-            snapshot_path=snapshot_path,
-            pod_name=pod.name,
-        )
-        return build_error_response(
-            error="snapshot_dir_not_found",
-            message=(
-                f"Snapshot directory '{snapshot_path}' does not exist in "
-                f"pod '{pod.name}'. The snapshot may have failed to write "
-                f"(check disk space on the Prometheus PV)."
-            ),
-            status_code=500,
-            pod_name=pod.name,
-            snapshot_path=snapshot_path,
+            command=" ".join(kubectl_cp_cmd),
         )
 
-    try:
-        # Use pod exec to tar the snapshot and stream it locally
-        # The tar command packs the snapshot directory; we unpack locally
-        tar_command = ["tar", "cf", "-", "-C", "/data/snapshots", snapshot_name]
+        proc = await asyncio.wait_for(
+            asyncio.create_subprocess_exec(
+                *kubectl_cp_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            ),
+            timeout=10.0,
+        )
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(),
+            timeout=300.0,
+        )
 
-        # Stream tar output directly to a temp file to avoid large binary
-        # data issues with WebSocket-based exec capture
-        tar_file_path = os.path.join(temp_dir, "_snapshot.tar")
-        with open(tar_file_path, "wb") as tar_out:
-            await asyncio.wait_for(
-                pod.exec(
-                    tar_command,
-                    container="prometheus-server",
-                    stdout=tar_out,
-                    check=True,
-                ),
-                timeout=300.0,
+        if proc.returncode != 0:
+            stderr_text = stderr_bytes.decode(errors="replace").strip()
+            log.error(
+                "snapshot_copy_failed",
+                error=stderr_text,
+                returncode=proc.returncode,
+                pod_name=pod.name,
+                snapshot_path=snapshot_path,
             )
-
-        # Extract the tar archive
-        with tarfile.open(tar_file_path, mode="r:") as tar:
-            tar.extractall(path=temp_dir)
-
-        # Remove the intermediate tar file
-        os.remove(tar_file_path)
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return build_error_response(
+                error="snapshot_copy_failed",
+                message=(
+                    f"kubectl cp from pod '{pod.name}' failed "
+                    f"(exit {proc.returncode}): {stderr_text}"
+                ),
+                status_code=500,
+                pod_name=pod.name,
+                snapshot_path=snapshot_path,
+                returncode=proc.returncode,
+            )
 
         log.info("snapshot_copied_to_local", temp_dir=temp_dir)
     except asyncio.TimeoutError:
@@ -238,19 +225,8 @@ async def post_prometheus_tsdb_export(
             timeout_seconds=300,
         )
     except Exception as exc:
-        # Clean up temp dir on failure
         shutil.rmtree(temp_dir, ignore_errors=True)
-
-        # Unwrap ExceptionGroup / BaseExceptionGroup to surface the real cause
         error_detail = str(exc)
-        if isinstance(exc, BaseExceptionGroup):
-            sub_errors = [
-                f"{type(e).__name__}: {e}" for e in exc.exceptions
-            ]
-            error_detail = (
-                f"{exc} | sub-exceptions: {'; '.join(sub_errors)}"
-            )
-
         log.error(
             "snapshot_copy_failed",
             error=error_detail,

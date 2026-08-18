@@ -889,7 +889,7 @@ class KubernetesManager:
                 error_output=str(exc),
             ) from exc
 
-        # Wait for cert-manager
+        # Wait for cert-manager deployments
         cm_wait_cmd = (
             "kubectl wait --for=condition=Available deployment --all"
             " -n cert-manager --timeout=360s"
@@ -912,7 +912,7 @@ class KubernetesManager:
                     error_output=stderr.decode().strip(),
                 )
 
-            logger.info("cert_manager_installed")
+            logger.info("cert_manager_deployments_available")
         except KubernetesError:
             raise
         except Exception as exc:
@@ -923,16 +923,17 @@ class KubernetesManager:
                 error_output=str(exc),
             ) from exc
 
-        # Install OTel operator
-        otel_apply_cmd = (
-            "kubectl apply -f"
-            " https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml"
+        # Wait for cert-manager webhook pod to be Ready (TLS bootstrap)
+        cm_webhook_wait_cmd = (
+            "kubectl wait --for=condition=Ready"
+            " pod -l app.kubernetes.io/component=webhook"
+            " -n cert-manager --timeout=120s"
         )
         try:
             proc = await asyncio.create_subprocess_exec(
                 "bash",
                 "-c",
-                otel_apply_cmd,
+                cm_webhook_wait_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -942,18 +943,115 @@ class KubernetesManager:
                 raise KubernetesError(
                     step="install_otel_collector",
                     node=None,
-                    command=otel_apply_cmd,
+                    command=cm_webhook_wait_cmd,
                     error_output=stderr.decode().strip(),
                 )
+
+            logger.info("cert_manager_webhook_pod_ready")
         except KubernetesError:
             raise
         except Exception as exc:
             raise KubernetesError(
                 step="install_otel_collector",
                 node=None,
-                command=otel_apply_cmd,
+                command=cm_webhook_wait_cmd,
                 error_output=str(exc),
             ) from exc
+
+        # Probe cert-manager webhook endpoint to confirm TLS is serving.
+        # Pod readiness alone doesn't guarantee the webhook is accepting connections.
+        cm_webhook_probe_cmd = (
+            "for i in $(seq 1 30); do"
+            " if kubectl get --raw"
+            " /api/v1/namespaces/cert-manager/services/cert-manager-webhook:https/proxy/livez"
+            " 2>/dev/null; then exit 0; fi;"
+            " sleep 5;"
+            " done; exit 1"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                cm_webhook_probe_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                logger.warning(
+                    "cert_manager_webhook_probe_failed",
+                    stderr=stderr.decode().strip()[:500],
+                )
+                # Fall through — the retry logic below will handle transient failures
+            else:
+                logger.info("cert_manager_webhook_serving")
+        except Exception as exc:
+            logger.warning("cert_manager_webhook_probe_exception", error=str(exc))
+
+        logger.info("cert_manager_installed")
+
+        # Install OTel operator (with retry for webhook readiness race condition)
+        otel_apply_cmd = (
+            "kubectl apply -f"
+            " https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml"
+        )
+        max_otel_attempts = 3
+        for attempt in range(1, max_otel_attempts + 1):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "bash",
+                    "-c",
+                    otel_apply_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await proc.communicate()
+
+                if proc.returncode == 0:
+                    logger.info("otel_operator_applied", attempt=attempt)
+                    break
+
+                error_output = stderr.decode().strip()
+
+                # Retry on webhook-related failures (cert-manager not yet serving)
+                if "webhook" in error_output.lower() and attempt < max_otel_attempts:
+                    backoff = 15 * attempt  # 15s, 30s
+                    logger.warning(
+                        "otel_apply_webhook_retry",
+                        attempt=attempt,
+                        backoff_seconds=backoff,
+                        error_snippet=error_output[:300],
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
+
+                # Non-webhook error or final attempt — raise
+                raise KubernetesError(
+                    step="install_otel_collector",
+                    node=None,
+                    command=otel_apply_cmd,
+                    error_output=error_output,
+                )
+            except KubernetesError:
+                raise
+            except Exception as exc:
+                if attempt < max_otel_attempts:
+                    backoff = 15 * attempt
+                    logger.warning(
+                        "otel_apply_exception_retry",
+                        attempt=attempt,
+                        backoff_seconds=backoff,
+                        error=str(exc),
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
+                raise KubernetesError(
+                    step="install_otel_collector",
+                    node=None,
+                    command=otel_apply_cmd,
+                    error_output=str(exc),
+                ) from exc
 
         # Wait for OTel operator
         otel_wait_cmd = (
