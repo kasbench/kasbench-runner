@@ -97,6 +97,10 @@ async def start_benchmark(request: Request, body: StartRequest | None = None) ->
             "BaseDelayPercentage": base_delay_percentage,
             "KasbenchUrl": kasbench_url,
         }
+
+        if role in role_overrides and role_overrides[role].fixed is not None:
+            payload["Fixed"] = role_overrides[role].fixed
+
         await lg_client.start(role, payload)
 
     try:

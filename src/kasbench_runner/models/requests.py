@@ -88,6 +88,7 @@ class RoleParamsOverride(BaseModel):
     base_load_intensity: int = Field(..., alias="baseLoadIntensity", ge=1)
     base_delay_percentage: int = Field(..., alias="baseDelayPercentage", ge=0, le=100)
     spawn_rate: int = Field(..., alias="spawnRate", ge=1)
+    fixed: int | None = Field(None, ge=0)
 
     model_config = {"populate_by_name": True}
 
