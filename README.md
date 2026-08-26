@@ -565,6 +565,65 @@ Collect a comprehensive cluster state snapshot and upload to S3.
 
 ---
 
+### POST /logs/{namespace}/export
+
+Export Kubernetes pod logs from all pods in a namespace to S3.
+
+**Path Parameters:** `namespace` — target Kubernetes namespace to collect logs from
+
+**S3 Path:** `{s3Bucket}/{runIdentifier}/{trialIdentifier}/logs/{namespace}/{filename}`
+
+**File Naming:**
+- Single-container pods: `{pod_name}.log`
+- Multi-container pods: `{pod_name}-{container_name}.log`
+
+**Success Response (200):**
+
+```json
+{
+  "message": "Logs exported successfully",
+  "filesExported": 12,
+  "s3Prefix": "run001/trial001/logs/globeco/",
+  "timestamp": "2026-06-10T14:47:00.000000+00:00"
+}
+```
+
+**Partial Success Response (207):**
+
+```json
+{
+  "message": "Log export completed with 2 error(s)",
+  "filesExported": 10,
+  "s3Prefix": "run001/trial001/logs/globeco/",
+  "errors": [
+    {
+      "pod": "worker-abc123",
+      "container": "sidecar",
+      "phase": "collection",
+      "error": "container logs not available"
+    },
+    {
+      "pod": "api-def456",
+      "container": "main",
+      "phase": "upload",
+      "error": "S3 operation failed: ClientError: ..."
+    }
+  ],
+  "timestamp": "2026-06-10T14:47:00.000000+00:00"
+}
+```
+
+**Error Responses:**
+
+| Status | Error | Condition |
+|--------|-------|-----------|
+| `409` | `not_initialized` | Benchmark has not been initialized |
+| `500` | `kubernetes_error` | Kubernetes API unreachable during pod listing |
+
+**Allowed States:** Any state except `not-initialized`
+
+---
+
 ## Usage Examples
 
 The following examples assume the Runner is accessible at `http://localhost:8080`.
@@ -1025,6 +1084,22 @@ curl -s -X POST http://localhost:8080/snapshot \
 }
 ```
 
+### POST /logs/{namespace}/export
+
+```bash
+curl -s -X POST http://localhost:8080/logs/globeco/export | jq .
+```
+
+**Expected response (200):**
+```json
+{
+  "message": "Logs exported successfully",
+  "filesExported": 12,
+  "s3Prefix": "run001/trial001/logs/globeco/",
+  "timestamp": "2026-06-10T14:47:00.000000+00:00"
+}
+```
+
 ### Full Lifecycle Script
 
 ```bash
@@ -1108,7 +1183,11 @@ echo "=== 13. Export metadata ==="
 curl -s -X POST "$RUNNER/metadata/export" | jq .
 
 echo ""
-echo "=== 14. Shutdown namespaces ==="
+echo "=== 14. Export pod logs ==="
+curl -s -X POST "$RUNNER/logs/globeco/export" | jq .
+
+echo ""
+echo "=== 15. Shutdown namespaces ==="
 curl -s -X POST "$RUNNER/shutdown" | jq .
 
 echo ""
@@ -1193,6 +1272,7 @@ kasbench-runner/
 │   │   ├── metadata.py              # POST /metadata/export
 │   │   ├── shutdown.py              # POST /shutdown
 │   │   ├── rollout.py               # POST /rollout/wait, POST /rollout/all
+│   │   ├── logs.py                  # POST /logs/{namespace}/export
 │   │   └── snapshot.py              # POST /snapshot
 │   └── services/
 │       ├── ssh_client.py            # Async SSH via asyncssh
@@ -1205,6 +1285,7 @@ kasbench-runner/
 │       ├── prometheus_client.py     # Prometheus range query client
 │       ├── health_checker.py        # Retry-based health polling
 │       ├── rollout_monitor.py       # Deployment rollout monitoring
+│       ├── log_collector.py         # Kubernetes pod log collection
 │       └── snapshot_collector.py    # Cluster state snapshot collection
 └── tests/                           # Test suite
 ```

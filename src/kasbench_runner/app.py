@@ -23,6 +23,7 @@ from kasbench_runner.routes import (
     db,
     images,
     initialize,
+    logs,
     metadata,
     metrics,
     output,
@@ -96,6 +97,7 @@ def create_app() -> FastAPI:
     app.include_router(roundtrip.router)
     app.include_router(snapshot.router)
     app.include_router(images.router)
+    app.include_router(logs.router)
 
     # Register global exception handler for RunnerError
     @app.exception_handler(RunnerError)
