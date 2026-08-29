@@ -848,6 +848,135 @@ class KubernetesManager:
                 error_output=str(exc),
             ) from exc
 
+    # Substrings that indicate a transient, retryable failure when fetching
+    # remote manifests (e.g. GitHub returning 5xx while serving release assets).
+    _TRANSIENT_ERROR_MARKERS = (
+        "504 gateway timeout",
+        "502 bad gateway",
+        "503 service unavailable",
+        "500 internal server error",
+        "gateway time-out",
+        "gateway timeout",
+        "unable to read url",
+        "timeout",
+        "timed out",
+        "connection reset",
+        "connection refused",
+        "temporary failure",
+        "temporarily unavailable",
+        "tls handshake",
+        "eof",
+        "i/o timeout",
+        "no such host",
+        "server misbehaving",
+    )
+
+    @classmethod
+    def _is_transient_error(cls, error_output: str) -> bool:
+        """Return True if the error output looks like a transient network failure.
+
+        Used to decide whether a failed remote-manifest fetch should be retried.
+        """
+        lowered = error_output.lower()
+        return any(marker in lowered for marker in cls._TRANSIENT_ERROR_MARKERS)
+
+    async def _run_kubectl_apply_with_retry(
+        self,
+        command: str,
+        step: str,
+        *,
+        max_attempts: int = 5,
+        base_backoff: float = 5.0,
+        extra_retry_predicate=None,
+    ) -> None:
+        """Run a kubectl apply command, retrying transient failures.
+
+        Retries up to ``max_attempts`` times using exponential backoff
+        (``base_backoff`` * 2**(attempt-1): 5s, 10s, 20s, 40s, ...) when the
+        command fails with a transient network error such as a GitHub 504
+        Gateway Timeout while fetching a remote manifest.
+
+        Args:
+            command: The shell command to execute.
+            step: Step name recorded on the raised KubernetesError.
+            max_attempts: Maximum number of attempts before giving up.
+            base_backoff: Base backoff in seconds for exponential backoff.
+            extra_retry_predicate: Optional callable taking the lowercased
+                error output and returning True to also retry on that error
+                (e.g. cert-manager webhook races).
+
+        Raises:
+            KubernetesError: If the command fails on the final attempt or with
+                a non-retryable error.
+        """
+        for attempt in range(1, max_attempts + 1):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "bash",
+                    "-c",
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _stdout, stderr = await proc.communicate()
+
+                if proc.returncode == 0:
+                    if attempt > 1:
+                        logger.info(
+                            "kubectl_apply_succeeded_after_retry",
+                            step=step,
+                            attempt=attempt,
+                        )
+                    return
+
+                error_output = stderr.decode().strip()
+                retryable = self._is_transient_error(error_output) or (
+                    extra_retry_predicate is not None
+                    and extra_retry_predicate(error_output.lower())
+                )
+
+                if retryable and attempt < max_attempts:
+                    backoff = base_backoff * (2 ** (attempt - 1))
+                    logger.warning(
+                        "kubectl_apply_transient_retry",
+                        step=step,
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        backoff_seconds=backoff,
+                        error_snippet=error_output[:300],
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
+
+                # Non-retryable error, or retries exhausted.
+                raise KubernetesError(
+                    step=step,
+                    node=None,
+                    command=command,
+                    error_output=error_output,
+                )
+            except KubernetesError:
+                raise
+            except Exception as exc:
+                if attempt < max_attempts:
+                    backoff = base_backoff * (2 ** (attempt - 1))
+                    logger.warning(
+                        "kubectl_apply_exception_retry",
+                        step=step,
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        backoff_seconds=backoff,
+                        error=str(exc),
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
+                raise KubernetesError(
+                    step=step,
+                    node=None,
+                    command=command,
+                    error_output=str(exc),
+                ) from exc
+
     async def _install_otel_collector(self) -> None:
         """Install cert-manager and OpenTelemetry Operator.
 
@@ -857,37 +986,15 @@ class KubernetesManager:
         Raises:
             KubernetesError: If any command fails.
         """
-        # Install cert-manager
+        # Install cert-manager (retries transient GitHub/network failures)
         cm_apply_cmd = (
             "kubectl apply -f"
             " https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml"
         )
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "bash",
-                "-c",
-                cm_apply_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate()
-
-            if proc.returncode != 0:
-                raise KubernetesError(
-                    step="install_otel_collector",
-                    node=None,
-                    command=cm_apply_cmd,
-                    error_output=stderr.decode().strip(),
-                )
-        except KubernetesError:
-            raise
-        except Exception as exc:
-            raise KubernetesError(
-                step="install_otel_collector",
-                node=None,
-                command=cm_apply_cmd,
-                error_output=str(exc),
-            ) from exc
+        await self._run_kubectl_apply_with_retry(
+            cm_apply_cmd,
+            step="install_otel_collector",
+        )
 
         # Wait for cert-manager deployments
         cm_wait_cmd = (
@@ -991,67 +1098,19 @@ class KubernetesManager:
 
         logger.info("cert_manager_installed")
 
-        # Install OTel operator (with retry for webhook readiness race condition)
+        # Install OTel operator. Retries transient GitHub/network failures
+        # (e.g. 504 Gateway Timeout fetching the release manifest) as well as
+        # the cert-manager webhook readiness race condition.
         otel_apply_cmd = (
             "kubectl apply -f"
             " https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml"
         )
-        max_otel_attempts = 3
-        for attempt in range(1, max_otel_attempts + 1):
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    "bash",
-                    "-c",
-                    otel_apply_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, stderr = await proc.communicate()
-
-                if proc.returncode == 0:
-                    logger.info("otel_operator_applied", attempt=attempt)
-                    break
-
-                error_output = stderr.decode().strip()
-
-                # Retry on webhook-related failures (cert-manager not yet serving)
-                if "webhook" in error_output.lower() and attempt < max_otel_attempts:
-                    backoff = 15 * attempt  # 15s, 30s
-                    logger.warning(
-                        "otel_apply_webhook_retry",
-                        attempt=attempt,
-                        backoff_seconds=backoff,
-                        error_snippet=error_output[:300],
-                    )
-                    await asyncio.sleep(backoff)
-                    continue
-
-                # Non-webhook error or final attempt — raise
-                raise KubernetesError(
-                    step="install_otel_collector",
-                    node=None,
-                    command=otel_apply_cmd,
-                    error_output=error_output,
-                )
-            except KubernetesError:
-                raise
-            except Exception as exc:
-                if attempt < max_otel_attempts:
-                    backoff = 15 * attempt
-                    logger.warning(
-                        "otel_apply_exception_retry",
-                        attempt=attempt,
-                        backoff_seconds=backoff,
-                        error=str(exc),
-                    )
-                    await asyncio.sleep(backoff)
-                    continue
-                raise KubernetesError(
-                    step="install_otel_collector",
-                    node=None,
-                    command=otel_apply_cmd,
-                    error_output=str(exc),
-                ) from exc
+        await self._run_kubectl_apply_with_retry(
+            otel_apply_cmd,
+            step="install_otel_collector",
+            extra_retry_predicate=lambda err: "webhook" in err,
+        )
+        logger.info("otel_operator_applied")
 
         # Wait for OTel operator
         otel_wait_cmd = (

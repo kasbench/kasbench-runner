@@ -13,6 +13,20 @@ from kasbench_runner.services.log_collector import LogCollector, LogCollectionRe
 from kasbench_runner.services.s3_client import S3Client, S3OperationError
 
 
+def _make_async_log_generator(lines: list[str] | None):
+    """Create an async generator that yields lines, simulating kr8s pod.logs().
+
+    If lines is None, returns an empty async generator.
+    """
+
+    async def _gen(*args, **kwargs):
+        if lines:
+            for line in lines:
+                yield line
+
+    return _gen
+
+
 # Strategy for identifiers: alphanumeric + hyphens, non-empty
 identifier_strategy = st.text(
     alphabet=st.sampled_from("abcdefghijklmnopqrstuvwxyz0123456789-"),
@@ -51,7 +65,7 @@ class TestS3KeyPathConstruction:
         mock_pod = MagicMock()
         mock_pod.name = pod_name
         mock_pod.raw = {"spec": {"containers": [{"name": "main"}]}}
-        mock_pod.logs = AsyncMock(return_value="some log content")
+        mock_pod.logs = _make_async_log_generator(["some log content"])
 
         # Mock kr8s to return our pod
         with patch("kasbench_runner.services.log_collector.kr8s") as mock_kr8s:
@@ -150,7 +164,7 @@ class TestS3KeyPathConstruction:
                 ]
             }
         }
-        mock_pod.logs = AsyncMock(return_value="log output")
+        mock_pod.logs = _make_async_log_generator(["log output"])
 
         # Mock kr8s to return our pod
         with patch("kasbench_runner.services.log_collector.kr8s") as mock_kr8s:
@@ -261,13 +275,13 @@ class TestBestEffortCollectionErrors:
         pod_ok = MagicMock()
         pod_ok.name = "healthy-pod"
         pod_ok.raw = {"spec": {"containers": [{"name": "main"}]}}
-        pod_ok.logs = AsyncMock(return_value="healthy pod logs")
+        pod_ok.logs = _make_async_log_generator(["healthy pod logs"])
 
-        # Pod 2: logs fail (returns None → recorded as error)
+        # Pod 2: logs fail (returns empty → recorded as error)
         pod_fail = MagicMock()
         pod_fail.name = "failing-pod"
         pod_fail.raw = {"spec": {"containers": [{"name": "app"}]}}
-        pod_fail.logs = AsyncMock(return_value=None)
+        pod_fail.logs = _make_async_log_generator([])
 
         with patch("kasbench_runner.services.log_collector.kr8s") as mock_kr8s:
             mock_api = AsyncMock()
@@ -311,13 +325,18 @@ class TestBestEffortCollectionErrors:
         pod_exception = MagicMock()
         pod_exception.name = "crashing-pod"
         pod_exception.raw = {"spec": {"containers": [{"name": "main"}]}}
-        pod_exception.logs = AsyncMock(side_effect=RuntimeError("container not ready"))
+
+        async def _raise_on_iterate(*args, **kwargs):
+            raise RuntimeError("container not ready")
+            yield  # make it an async generator
+
+        pod_exception.logs = _raise_on_iterate
 
         # Pod that works fine
         pod_ok = MagicMock()
         pod_ok.name = "working-pod"
         pod_ok.raw = {"spec": {"containers": [{"name": "app"}]}}
-        pod_ok.logs = AsyncMock(return_value="working logs")
+        pod_ok.logs = _make_async_log_generator(["working logs"])
 
         with patch("kasbench_runner.services.log_collector.kr8s") as mock_kr8s:
             mock_api = AsyncMock()
@@ -373,12 +392,12 @@ class TestBestEffortUploadErrors:
         pod_a = MagicMock()
         pod_a.name = "pod-a"
         pod_a.raw = {"spec": {"containers": [{"name": "main"}]}}
-        pod_a.logs = AsyncMock(return_value="logs from pod a")
+        pod_a.logs = _make_async_log_generator(["logs from pod a"])
 
         pod_b = MagicMock()
         pod_b.name = "pod-b"
         pod_b.raw = {"spec": {"containers": [{"name": "main"}]}}
-        pod_b.logs = AsyncMock(return_value="logs from pod b")
+        pod_b.logs = _make_async_log_generator(["logs from pod b"])
 
         with patch("kasbench_runner.services.log_collector.kr8s") as mock_kr8s:
             mock_api = AsyncMock()

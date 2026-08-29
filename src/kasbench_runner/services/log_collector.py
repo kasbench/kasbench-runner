@@ -227,9 +227,12 @@ class LogCollector:
             Log content as bytes, or None if unavailable.
         """
         try:
-            logs = await pod.logs(container=container_name)
-            if logs:
-                return logs.encode("utf-8") if isinstance(logs, str) else logs
-            return None
+            lines: list[str] = []
+            async for line in pod.logs(container=container_name):
+                lines.append(line)
+            if not lines:
+                return None
+            log_content = "\n".join(lines)
+            return log_content.encode("utf-8")
         except Exception:
             return None
