@@ -222,6 +222,7 @@ async def _install_helm_chart(config: RunnerConfig, autoscaler: str, execution_d
             "--namespace", config.helm_namespace,
             "--create-namespace",
             "--wait",
+            "--debug",
             "--timeout", f"{config.helm_install_timeout}s",
             "--set", f"autoscaler={autoscaler}",
             "--set", f"executionDataFs={execution_data_fs}",
@@ -469,7 +470,12 @@ async def _deploy_load_generators(body: InitializeRequest, config: RunnerConfig)
         DockerError: If network verification or container start fails.
         RunnerError: If any load generator fails health checks.
     """
-    docker = DockerManager()
+    docker = DockerManager(
+        run_max_attempts=config.docker_run_max_attempts,
+        run_initial_backoff_seconds=config.docker_run_initial_backoff_seconds,
+        run_backoff_multiplier=config.docker_run_backoff_multiplier,
+        run_max_backoff_seconds=config.docker_run_max_backoff_seconds,
+    )
 
     # Step 6.1: Verify kasbench Docker network exists
     await docker.verify_network("kasbench")

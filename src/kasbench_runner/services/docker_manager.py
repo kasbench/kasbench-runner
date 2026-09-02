@@ -9,6 +9,7 @@ Requirements: 15.1, 15.2, 15.3, 15.4, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6
 
 import asyncio
 import json
+import random
 
 import structlog
 
@@ -17,13 +18,77 @@ from kasbench_runner.errors import DockerError
 logger = structlog.get_logger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Transient error detection
+# ---------------------------------------------------------------------------
+# Substrings that indicate a transient failure worth retrying. These are
+# matched case-insensitively against the Docker CLI stderr output. Most of
+# these relate to registry/network hiccups while pulling an image (Docker
+# auto-pulls when the image is not present locally).
+_TRANSIENT_ERROR_MARKERS: tuple[str, ...] = (
+    "502 bad gateway",
+    "503 service unavailable",
+    "504 gateway timeout",
+    "500 internal server error",
+    "429 too many requests",
+    "httpreadseeker",
+    "failed to copy",
+    "timeout",
+    "timed out",
+    "temporary failure",
+    "temporarily unavailable",
+    "connection reset",
+    "connection refused",
+    "eof",
+    "i/o timeout",
+    "tls handshake",
+    "no route to host",
+    "dial tcp",
+    "unexpected status from",
+    "manifest unknown: retry",
+    "registry",
+)
+
+
+def _is_transient_error(error_output: str) -> bool:
+    """Return True if the Docker error output looks transient/retryable."""
+    lowered = error_output.lower()
+    return any(marker in lowered for marker in _TRANSIENT_ERROR_MARKERS)
+
+
 class DockerManager:
     """Manages Docker operations via CLI subprocess calls.
 
     All methods use asyncio.create_subprocess_exec to invoke Docker CLI
     commands. Each operation is logged at INFO level and raises DockerError
     on failure.
+
+    Container start operations that fail with a transient error (e.g. a
+    registry 502 while pulling the image) are retried with exponential
+    backoff.
     """
+
+    def __init__(
+        self,
+        run_max_attempts: int = 5,
+        run_initial_backoff_seconds: float = 2.0,
+        run_backoff_multiplier: float = 2.0,
+        run_max_backoff_seconds: float = 30.0,
+    ) -> None:
+        """Initialize the manager with retry settings for run operations.
+
+        Args:
+            run_max_attempts: Total number of attempts for a container start
+                before giving up (including the first attempt).
+            run_initial_backoff_seconds: Delay before the first retry.
+            run_backoff_multiplier: Factor applied to the backoff after each
+                failed attempt.
+            run_max_backoff_seconds: Upper bound on the backoff delay.
+        """
+        self._run_max_attempts = max(1, run_max_attempts)
+        self._run_initial_backoff_seconds = run_initial_backoff_seconds
+        self._run_backoff_multiplier = run_backoff_multiplier
+        self._run_max_backoff_seconds = run_max_backoff_seconds
 
     async def verify_network(self, name: str) -> None:
         """Verify that a Docker network exists.
@@ -125,22 +190,33 @@ class DockerManager:
 
         cmd.append(image)
 
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await process.communicate()
-        except OSError as exc:
-            raise DockerError(
-                container_name=name,
-                image=image,
-                operation="run",
-                error_output=f"Cannot connect to Docker daemon: {exc}",
-            ) from exc
+        backoff = self._run_initial_backoff_seconds
 
-        if process.returncode != 0:
+        for attempt in range(1, self._run_max_attempts + 1):
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await process.communicate()
+            except OSError as exc:
+                raise DockerError(
+                    container_name=name,
+                    image=image,
+                    operation="run",
+                    error_output=f"Cannot connect to Docker daemon: {exc}",
+                ) from exc
+
+            if process.returncode == 0:
+                logger.info(
+                    "docker.container_started",
+                    container_name=name,
+                    image=image,
+                    attempt=attempt,
+                )
+                return
+
             error_output = stderr.decode().strip()
 
             if "already in use" in error_output:
@@ -151,14 +227,46 @@ class DockerManager:
                 )
                 return
 
+            transient = _is_transient_error(error_output)
+            attempts_remaining = self._run_max_attempts - attempt
+
+            # Retry only transient failures that still have attempts left.
+            if transient and attempts_remaining > 0:
+                # Full jitter: sleep for a random duration up to the current
+                # backoff to avoid thundering-herd retries.
+                delay = min(backoff, self._run_max_backoff_seconds)
+                sleep_for = random.uniform(0, delay)
+                logger.warning(
+                    "docker.run_container_transient_failure",
+                    container_name=name,
+                    image=image,
+                    attempt=attempt,
+                    max_attempts=self._run_max_attempts,
+                    retry_in_seconds=round(sleep_for, 2),
+                    error_output=error_output,
+                )
+                await asyncio.sleep(sleep_for)
+                backoff = min(
+                    backoff * self._run_backoff_multiplier,
+                    self._run_max_backoff_seconds,
+                )
+                continue
+
+            # Non-transient error, or we've exhausted our retries.
+            if transient:
+                logger.error(
+                    "docker.run_container_retries_exhausted",
+                    container_name=name,
+                    image=image,
+                    attempts=self._run_max_attempts,
+                    error_output=error_output,
+                )
             raise DockerError(
                 container_name=name,
                 image=image,
                 operation="run",
                 error_output=error_output,
             )
-
-        logger.info("docker.container_started", container_name=name, image=image)
 
     async def copy_to_container(
         self,

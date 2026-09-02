@@ -134,6 +134,10 @@ class RunnerConfig(BaseSettings):
 
     # Docker
     rabbitmq_image: str = "rabbitmq:4-management"
+    docker_run_max_attempts: int = 5
+    docker_run_initial_backoff_seconds: float = 2.0
+    docker_run_backoff_multiplier: float = 2.0
+    docker_run_max_backoff_seconds: float = 30.0
 
     # HTTP client
     http_connect_timeout: int = 10
