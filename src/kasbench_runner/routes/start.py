@@ -18,7 +18,11 @@ from kasbench_runner.config import ROLE_PARAMS, VALID_ROLES, RunnerConfig
 from kasbench_runner.errors import LoadGeneratorError, build_error_response
 from kasbench_runner.models.requests import StartRequest
 from kasbench_runner.models.responses import StartResponse
-from kasbench_runner.models.state import BenchmarkState, BenchmarkStatus
+from kasbench_runner.models.state import (
+    BenchmarkState,
+    BenchmarkStatus,
+    EffectiveRoleParameters,
+)
 from kasbench_runner.services.health_checker import check_health
 from kasbench_runner.services.load_generator_client import LoadGeneratorClient
 
@@ -74,32 +78,44 @@ async def start_benchmark(request: Request, body: StartRequest | None = None) ->
 
     lg_client = LoadGeneratorClient()
 
-    # Build effective role params: override takes precedence over defaults
+    # Build effective role params: override takes precedence over defaults.
+    # Resolve them once, up front, so the actual values used for this trial
+    # can be persisted to state for later export in run_details.json.
     role_overrides = body.role_params if body and body.role_params else {}
 
-    async def start_role(role: str) -> None:
+    effective_role_params: dict[str, EffectiveRoleParameters] = {}
+    for role in VALID_ROLES:
         if role in role_overrides:
             override = role_overrides[role]
-            base_load_intensity = override.base_load_intensity
-            base_delay_percentage = override.base_delay_percentage
-            spawn_rate = override.spawn_rate
+            effective_role_params[role] = EffectiveRoleParameters(
+                base_load_intensity=override.base_load_intensity,
+                base_delay_percentage=override.base_delay_percentage,
+                spawn_rate=override.spawn_rate,
+                fixed=override.fixed,
+            )
         else:
             params = ROLE_PARAMS[role]
-            base_load_intensity = params.base_load_intensity
-            base_delay_percentage = params.base_delay_percentage
-            spawn_rate = params.spawn_rate
+            effective_role_params[role] = EffectiveRoleParameters(
+                base_load_intensity=params.base_load_intensity,
+                base_delay_percentage=params.base_delay_percentage,
+                spawn_rate=params.spawn_rate,
+                fixed=None,
+            )
+
+    async def start_role(role: str) -> None:
+        params = effective_role_params[role]
 
         payload = {
             "Role": role,
             "BenchmarkLengthMinutes": benchmark_length_minutes,
-            "BaseLoadIntensity": base_load_intensity,
-            "SpawnRate": spawn_rate,
-            "BaseDelayPercentage": base_delay_percentage,
+            "BaseLoadIntensity": params.base_load_intensity,
+            "SpawnRate": params.spawn_rate,
+            "BaseDelayPercentage": params.base_delay_percentage,
             "KasbenchUrl": kasbench_url,
         }
 
-        if role in role_overrides and role_overrides[role].fixed is not None:
-            payload["Fixed"] = role_overrides[role].fixed
+        if params.fixed is not None:
+            payload["Fixed"] = params.fixed
 
         await lg_client.start(role, payload)
 
@@ -149,6 +165,9 @@ async def start_benchmark(request: Request, body: StartRequest | None = None) ->
     # Req 7.10: Set status to running and return start timestamp
     state.status = BenchmarkStatus.RUNNING
     state.start_time = start_time
+    # Record the actual role parameters used for this trial so they can be
+    # exported in run_details.json instead of the ROLE_PARAMS defaults.
+    state.effective_role_params = effective_role_params
 
     logger.info("benchmark_started", start_time=start_time.isoformat())
 

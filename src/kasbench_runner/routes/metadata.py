@@ -154,14 +154,28 @@ def _build_run_details(
         "forceManifestInstall": init_config.force_manifest_install,
     }
 
-    # Roles section: per-role parameters from ROLE_PARAMS
+    # Roles section: the effective per-role parameters actually used for this
+    # trial (overrides from the /start roleParams applied on top of the
+    # ROLE_PARAMS defaults). If the benchmark has not been started yet, no
+    # effective params exist, so fall back to the ROLE_PARAMS defaults.
     roles = {}
-    for role_name, params in ROLE_PARAMS.items():
-        roles[role_name] = {
-            "base_load_intensity": params.base_load_intensity,
-            "base_delay_percentage": params.base_delay_percentage,
-            "spawn_rate": params.spawn_rate,
-        }
+    if state.effective_role_params:
+        for role_name, params in state.effective_role_params.items():
+            role_entry = {
+                "base_load_intensity": params.base_load_intensity,
+                "base_delay_percentage": params.base_delay_percentage,
+                "spawn_rate": params.spawn_rate,
+            }
+            if params.fixed is not None:
+                role_entry["fixed"] = params.fixed
+            roles[role_name] = role_entry
+    else:
+        for role_name, defaults in ROLE_PARAMS.items():
+            roles[role_name] = {
+                "base_load_intensity": defaults.base_load_intensity,
+                "base_delay_percentage": defaults.base_delay_percentage,
+                "spawn_rate": defaults.spawn_rate,
+            }
 
     # Manifests section: from MANIFEST_REPOS
     manifests = [
