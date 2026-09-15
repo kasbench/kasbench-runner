@@ -31,6 +31,8 @@ _TRANSIENT_ERROR_MARKERS: tuple[str, ...] = (
     "504 gateway timeout",
     "500 internal server error",
     "429 too many requests",
+    "toomanyrequests",
+    "rate limit",
     "httpreadseeker",
     "failed to copy",
     "timeout",
@@ -43,10 +45,24 @@ _TRANSIENT_ERROR_MARKERS: tuple[str, ...] = (
     "i/o timeout",
     "tls handshake",
     "no route to host",
+    "no such host",
     "dial tcp",
     "unexpected status from",
+    "manifest unknown",
     "manifest unknown: retry",
+    "manifest for",
+    "not found: manifest",
     "registry",
+    # Docker Hub can transiently return these for images that DO exist and
+    # are public (registry hiccups / rate limiting). Treat them as retryable
+    # so a real, published image is not abandoned on the first flaky pull.
+    "pull access denied",
+    "repository does not exist",
+    "unable to find image",
+    "error response from daemon",
+    "received unexpected http status",
+    "read: connection",
+    "context deadline exceeded",
 )
 
 

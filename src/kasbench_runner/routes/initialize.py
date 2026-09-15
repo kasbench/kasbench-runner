@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import random
 
 import httpx
 import structlog
@@ -40,6 +41,49 @@ from kasbench_runner.services.ssh_client import SSHClient
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Transient error detection for Helm operations
+# ---------------------------------------------------------------------------
+# Helm repo add/update/install reach out to remote chart repositories and
+# container registries, so they are subject to the same transient network and
+# registry failures as Docker image pulls. Matched case-insensitively against
+# the Helm CLI stderr output.
+_HELM_TRANSIENT_ERROR_MARKERS: tuple[str, ...] = (
+    "502 bad gateway",
+    "503 service unavailable",
+    "504 gateway timeout",
+    "500 internal server error",
+    "429 too many requests",
+    "toomanyrequests",
+    "rate limit",
+    "timeout",
+    "timed out",
+    "temporary failure",
+    "temporarily unavailable",
+    "connection reset",
+    "connection refused",
+    "eof",
+    "i/o timeout",
+    "tls handshake",
+    "no route to host",
+    "no such host",
+    "dial tcp",
+    "context deadline exceeded",
+    "received unexpected http status",
+    "could not download",
+    "failed to fetch",
+    "failed to download",
+    "read: connection",
+    "unexpected eof",
+)
+
+
+def _is_transient_helm_error(error_output: str) -> bool:
+    """Return True if the Helm error output looks transient/retryable."""
+    lowered = error_output.lower()
+    return any(marker in lowered for marker in _HELM_TRANSIENT_ERROR_MARKERS)
 
 
 @router.post("/initialize")
@@ -231,7 +275,39 @@ async def _install_helm_chart(config: RunnerConfig, autoscaler: str, execution_d
 
     for cmd in commands:
         cmd_str = " ".join(cmd)
-        logger.info("helm_command_start", command=cmd_str)
+        await _run_helm_command_with_retry(
+            cmd,
+            cmd_str,
+            max_attempts=config.docker_run_max_attempts,
+            initial_backoff_seconds=config.docker_run_initial_backoff_seconds,
+            backoff_multiplier=config.docker_run_backoff_multiplier,
+            max_backoff_seconds=config.docker_run_max_backoff_seconds,
+        )
+
+
+async def _run_helm_command_with_retry(
+    cmd: list[str],
+    cmd_str: str,
+    *,
+    max_attempts: int,
+    initial_backoff_seconds: float,
+    backoff_multiplier: float,
+    max_backoff_seconds: float,
+) -> None:
+    """Run a single Helm CLI command, retrying transient failures.
+
+    Uses exponential backoff with full jitter. Transient failures (registry
+    or network hiccups) are retried up to ``max_attempts`` times; a missing
+    Helm binary or any non-transient failure is raised immediately.
+
+    Raises:
+        HelmInstallError: If the command fails with a non-transient error or
+            all retry attempts are exhausted.
+    """
+    backoff = initial_backoff_seconds
+
+    for attempt in range(1, max(1, max_attempts) + 1):
+        logger.info("helm_command_start", command=cmd_str, attempt=attempt)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -246,21 +322,43 @@ async def _install_helm_chart(config: RunnerConfig, autoscaler: str, execution_d
                 stderr="Helm CLI binary not found. Ensure helm is installed and on PATH.",
             )
 
-        if proc.returncode != 0:
-            error_output = stderr.decode().strip()
-            logger.error(
-                "helm_command_failed",
+        if proc.returncode == 0:
+            logger.info(
+                "helm_command_success",
                 command=cmd_str,
-                exit_code=proc.returncode,
+                attempt=attempt,
+                stdout=stdout.decode()[:200],
+            )
+            return
+
+        error_output = stderr.decode().strip()
+        transient = _is_transient_helm_error(error_output)
+        attempts_remaining = max(1, max_attempts) - attempt
+
+        if transient and attempts_remaining > 0:
+            delay = min(backoff, max_backoff_seconds)
+            sleep_for = random.uniform(0, delay)
+            logger.warning(
+                "helm_command_transient_failure",
+                command=cmd_str,
+                attempt=attempt,
+                max_attempts=max_attempts,
+                retry_in_seconds=round(sleep_for, 2),
                 stderr=error_output,
             )
-            raise HelmInstallError(command=cmd_str, stderr=error_output)
+            await asyncio.sleep(sleep_for)
+            backoff = min(backoff * backoff_multiplier, max_backoff_seconds)
+            continue
 
-        logger.info(
-            "helm_command_success",
+        logger.error(
+            "helm_command_failed",
             command=cmd_str,
-            stdout=stdout.decode()[:200],
+            exit_code=proc.returncode,
+            attempt=attempt,
+            transient=transient,
+            stderr=error_output,
         )
+        raise HelmInstallError(command=cmd_str, stderr=error_output)
 
 
 async def _install_manifests(body: InitializeRequest, config: RunnerConfig) -> list[dict[str, str]]:
