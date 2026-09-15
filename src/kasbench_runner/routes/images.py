@@ -99,42 +99,59 @@ def _extract_images(kubectl_json: dict) -> str:
     return "\n".join(formatted_lines) + "\n"
 
 
-@router.post("/images/export")
-async def post_images_export(request: Request) -> JSONResponse:
-    """Export container images from deployments/statefulsets to S3.
+class ImagesExportError(Exception):
+    """Raised when the image export flow fails at a recoverable step.
+
+    Carries the structured fields needed to build an error response so that
+    both the HTTP endpoint and the initialization flow can surface a
+    consistent error.
+    """
+
+    def __init__(self, error: str, message: str, status_code: int, **context: object) -> None:
+        super().__init__(message)
+        self.error = error
+        self.message = message
+        self.status_code = status_code
+        self.context = context
+
+
+async def export_images(
+    *,
+    run_identifier: str,
+    trial_identifier: str,
+    s3_bucket: str,
+    filename: str,
+) -> str:
+    """Query cluster images and upload them to S3 under the given filename.
 
     Steps:
-      1. State guard — reject if NOT_INITIALIZED
-      2. Run kubectl get deployments,statefulsets in globeco namespace
-      3. Parse JSON output and extract container images (excluding busybox)
-      4. Format as aligned text table
-      5. Upload to S3 at {run_id}/{trial_id}/images/images.txt
-      6. Return 200 with s3Key and timestamp
+      1. Run kubectl get deployments,statefulsets in globeco namespace
+      2. Parse JSON output and extract container images (excluding busybox)
+      3. Format as aligned text table
+      4. Upload to S3 at {run_id}/{trial_id}/images/{filename}
+
+    Args:
+        run_identifier: The run identifier used in the S3 key prefix.
+        trial_identifier: The trial identifier used in the S3 key prefix.
+        s3_bucket: The destination S3 bucket.
+        filename: The object name under the images/ prefix (e.g. "pre-images.txt").
+
+    Returns:
+        The S3 key the images were uploaded to.
+
+    Raises:
+        ImagesExportError: If kubectl fails, returns no data, produces
+            unparseable JSON, or the S3 upload fails.
     """
-    state: BenchmarkState = request.app.state.benchmark_state
-
-    # Step 1: State guard
-    if state.status == BenchmarkStatus.NOT_INITIALIZED:
-        return build_error_response(
-            error="benchmark_not_initialized",
-            message="Benchmark must be initialized before exporting images",
-            status_code=409,
-            current_status=state.status.value,
-        )
-
-    config = state.config
-    run_identifier = config.run_identifier
-    trial_identifier = config.trial_identifier
-    s3_bucket = config.s3_bucket
-
     log = logger.bind(
         run_identifier=run_identifier,
         trial_identifier=trial_identifier,
         namespace=_NAMESPACE,
+        filename=filename,
     )
     log.info("images_export_start")
 
-    # Step 2: Run kubectl get deployments,statefulsets
+    # Step 1: Run kubectl get deployments,statefulsets
     proc = await asyncio.create_subprocess_exec(
         *_KUBECTL_COMMAND,
         stdout=asyncio.subprocess.PIPE,
@@ -149,7 +166,7 @@ async def post_images_export(request: Request) -> JSONResponse:
             exit_code=proc.returncode,
             stderr=stderr_text,
         )
-        return build_error_response(
+        raise ImagesExportError(
             error="images_kubectl_failed",
             message="kubectl get deployments,statefulsets returned non-zero exit code",
             status_code=500,
@@ -158,12 +175,12 @@ async def post_images_export(request: Request) -> JSONResponse:
             namespace=_NAMESPACE,
         )
 
-    # Step 3: Parse JSON output
+    # Step 2: Parse JSON output
     stdout_text = stdout_bytes.decode().strip()
 
     if not stdout_text:
         log.error("images_kubectl_empty")
-        return build_error_response(
+        raise ImagesExportError(
             error="images_kubectl_empty",
             message="No data was returned from kubectl get command",
             status_code=500,
@@ -174,22 +191,22 @@ async def post_images_export(request: Request) -> JSONResponse:
         kubectl_json = json.loads(stdout_text)
     except json.JSONDecodeError as exc:
         log.error("images_json_parse_failed", error=str(exc))
-        return build_error_response(
+        raise ImagesExportError(
             error="images_json_parse_failed",
             message=f"Failed to parse kubectl JSON output: {exc}",
             status_code=500,
             output_preview=stdout_text[:200],
         )
 
-    # Step 4: Extract and format images
+    # Step 3: Extract and format images
     formatted_output = _extract_images(kubectl_json)
 
     if not formatted_output:
         log.warning("images_none_found")
         formatted_output = ""
 
-    # Step 5: Upload to S3
-    s3_key = f"{run_identifier}/{trial_identifier}/images/images.txt"
+    # Step 4: Upload to S3
+    s3_key = f"{run_identifier}/{trial_identifier}/images/{filename}"
     s3_client = S3Client(bucket=s3_bucket)
 
     try:
@@ -200,7 +217,7 @@ async def post_images_export(request: Request) -> JSONResponse:
         )
     except S3OperationError as exc:
         log.error("s3_upload_failed", s3_key=s3_key, error=str(exc))
-        return build_error_response(
+        raise ImagesExportError(
             error="s3_operation_failed",
             message=f"S3 upload failed: {exc.message}",
             status_code=500,
@@ -208,6 +225,47 @@ async def post_images_export(request: Request) -> JSONResponse:
         )
 
     log.info("images_export_success", s3_key=s3_key)
+    return s3_key
+
+
+@router.post("/images/export")
+async def post_images_export(request: Request) -> JSONResponse:
+    """Export container images from deployments/statefulsets to S3.
+
+    Steps:
+      1. State guard — reject if NOT_INITIALIZED
+      2-5. Delegate to export_images (kubectl, parse, format, upload)
+      6. Return 200 with s3Key and timestamp
+
+    Uploads to {run_id}/{trial_id}/images/post-images.txt.
+    """
+    state: BenchmarkState = request.app.state.benchmark_state
+
+    # Step 1: State guard
+    if state.status == BenchmarkStatus.NOT_INITIALIZED:
+        return build_error_response(
+            error="benchmark_not_initialized",
+            message="Benchmark must be initialized before exporting images",
+            status_code=409,
+            current_status=state.status.value,
+        )
+
+    config = state.config
+
+    try:
+        s3_key = await export_images(
+            run_identifier=config.run_identifier,
+            trial_identifier=config.trial_identifier,
+            s3_bucket=config.s3_bucket,
+            filename="post-images.txt",
+        )
+    except ImagesExportError as exc:
+        return build_error_response(
+            error=exc.error,
+            message=exc.message,
+            status_code=exc.status_code,
+            **exc.context,
+        )
 
     # Step 6: Return success response
     return JSONResponse(

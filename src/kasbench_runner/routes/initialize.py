@@ -27,6 +27,7 @@ from kasbench_runner.config import (
 from kasbench_runner.errors import HelmInstallError, ManifestError, build_error_response
 from kasbench_runner.models.requests import InitializeRequest
 from kasbench_runner.models.state import BenchmarkState, BenchmarkStatus
+from kasbench_runner.routes.images import ImagesExportError, export_images
 from kasbench_runner.services.docker_manager import DockerManager
 from kasbench_runner.services.health_checker import check_health
 from kasbench_runner.services.kubernetes_manager import KubernetesManager
@@ -219,6 +220,22 @@ async def initialize(body: InitializeRequest, request: Request) -> JSONResponse:
             message=str(exc),
             status_code=500,
             exception_class=type(exc).__name__,
+        )
+
+    # Step 5b: Export pre-benchmark container images to S3 (pre-images.txt)
+    try:
+        await export_images(
+            run_identifier=body.run_identifier,
+            trial_identifier=body.trial_identifier,
+            s3_bucket=body.s3_bucket,
+            filename="pre-images.txt",
+        )
+    except ImagesExportError as exc:
+        return build_error_response(
+            error=exc.error,
+            message=exc.message,
+            status_code=exc.status_code,
+            **exc.context,
         )
 
     # Step 6: Set state flags and transition to not-started (Req 1.2)
