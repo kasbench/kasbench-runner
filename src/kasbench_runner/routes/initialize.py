@@ -222,13 +222,13 @@ async def initialize(body: InitializeRequest, request: Request) -> JSONResponse:
             exception_class=type(exc).__name__,
         )
 
-    # Step 5b: Export pre-benchmark container images to S3 (pre-images.txt)
+    # Step 5b: Export pre-benchmark container images to S3 (pre-images.json)
     try:
         await export_images(
             run_identifier=body.run_identifier,
             trial_identifier=body.trial_identifier,
             s3_bucket=body.s3_bucket,
-            filename="pre-images.txt",
+            filename="pre-images.json",
         )
     except ImagesExportError as exc:
         return build_error_response(
