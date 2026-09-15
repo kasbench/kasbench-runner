@@ -363,6 +363,65 @@ class DockerManager:
             dest_path=dest_path,
         )
 
+    async def inspect_image(self, image: str) -> dict:
+        """Inspect a Docker image and return its metadata.
+
+        Runs `docker image inspect <image>` and returns the parsed JSON output
+        (first element of the array). The returned dict includes the ``Id``
+        field (the image's content-addressable digest, e.g.
+        ``sha256:...``) and ``RepoTags``.
+
+        Args:
+            image: The image reference (name:tag) to inspect.
+
+        Returns:
+            Parsed JSON output from docker image inspect (first element).
+
+        Raises:
+            DockerError: If the inspect command fails or output is unparseable.
+        """
+        logger.info("docker.inspect_image", image=image)
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "docker", "image", "inspect", image,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await process.communicate()
+        except OSError as exc:
+            raise DockerError(
+                container_name="",
+                image=image,
+                operation="image_inspect",
+                error_output=f"Cannot connect to Docker daemon: {exc}",
+            ) from exc
+
+        if process.returncode != 0:
+            error_output = stderr.decode().strip()
+            raise DockerError(
+                container_name="",
+                image=image,
+                operation="image_inspect",
+                error_output=error_output,
+            )
+
+        try:
+            result = json.loads(stdout.decode())
+        except json.JSONDecodeError as exc:
+            raise DockerError(
+                container_name="",
+                image=image,
+                operation="image_inspect",
+                error_output=f"Failed to parse docker image inspect output: {exc}",
+            ) from exc
+
+        # docker image inspect returns a list; return the first element
+        if isinstance(result, list) and len(result) > 0:
+            return result[0]
+
+        return result
+
     async def inspect_container(self, name: str) -> dict:
         """Inspect a Docker container and return its state.
 

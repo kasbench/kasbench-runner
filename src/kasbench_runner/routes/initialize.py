@@ -658,3 +658,85 @@ async def _deploy_load_generators(body: InitializeRequest, config: RunnerConfig)
         logger.info("load_generator_verified", role=role)
 
     logger.info("all_load_generators_deployed")
+
+    # Step 6.11: Capture the load generator image id and record the image
+    # name (with tag) and image id to S3 at
+    # {run_id}/{trial_id}/images/load_runner_image.json.
+    #
+    # This is best-effort: a failure to capture or upload this metadata must
+    # not abort initialization. We log the outcome in detail so any failure
+    # can be diagnosed and corrected.
+    await _capture_load_generator_image(body, docker)
+
+
+async def _capture_load_generator_image(
+    body: InitializeRequest, docker: DockerManager
+) -> None:
+    """Capture the load generator image id and upload the metadata to S3.
+
+    Inspects the load generator image to resolve its content-addressable image
+    id, then stores a JSON document containing the image name (with tag) and
+    the resolved image id at
+    ``{run_id}/{trial_id}/images/load_runner_image.json``.
+
+    This step is intentionally non-fatal: any failure (image inspect, JSON
+    serialization, or S3 upload) is logged in detail and swallowed so that
+    initialization can continue.
+    """
+    import json
+    from datetime import datetime, timezone
+
+    image = body.load_generator_image
+    s3_key = (
+        f"{body.run_identifier}/{body.trial_identifier}/images/load_runner_image.json"
+    )
+    log = logger.bind(
+        image=image,
+        run_identifier=body.run_identifier,
+        trial_identifier=body.trial_identifier,
+        s3_key=s3_key,
+    )
+    log.info("load_generator_image_capture_start")
+
+    try:
+        # Resolve the image id via `docker image inspect`.
+        inspected = await docker.inspect_image(image)
+        image_id = inspected.get("Id", "")
+        repo_tags = inspected.get("RepoTags") or []
+
+        if not image_id:
+            log.warning(
+                "load_generator_image_id_missing",
+                repo_tags=repo_tags,
+                inspect_keys=sorted(inspected.keys()),
+            )
+
+        document = {
+            "runIdentifier": body.run_identifier,
+            "trialIdentifier": body.trial_identifier,
+            "image": image,
+            "imageId": image_id,
+            "repoTags": repo_tags,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        serialized = json.dumps(document, indent=2, sort_keys=False)
+
+        s3_client = S3Client(bucket=body.s3_bucket)
+        await s3_client.upload_bytes(
+            key=s3_key,
+            data=serialized.encode("utf-8"),
+            content_type="application/json",
+        )
+
+        log.info(
+            "load_generator_image_capture_success",
+            image_id=image_id,
+            repo_tags=repo_tags,
+        )
+    except Exception as exc:
+        # Non-fatal: log full detail and continue with initialization.
+        log.error(
+            "load_generator_image_capture_failed",
+            error=str(exc),
+            exception_class=type(exc).__name__,
+        )
