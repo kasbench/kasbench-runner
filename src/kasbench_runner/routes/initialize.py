@@ -201,6 +201,14 @@ async def initialize(body: InitializeRequest, request: Request) -> JSONResponse:
                 exception_class=type(exc).__name__,
             )
 
+    # Step 4b: Capture the name, url, and version of every installed Helm chart
+    # (from both the Kubernetes install in step 3 and the GlobeCo install in
+    # step 4) and upload them to {run_id}/{trial_id}/helm_versions.json.
+    #
+    # This is best-effort: a failure to capture or upload this metadata must
+    # not abort initialization.
+    await _capture_helm_versions(body)
+
     # Step 5: Load generator deployment (Req 6.1–6.12)
     try:
         await _deploy_load_generators(body, config)
@@ -376,6 +384,142 @@ async def _run_helm_command_with_retry(
             stderr=error_output,
         )
         raise HelmInstallError(command=cmd_str, stderr=error_output)
+
+
+async def _capture_helm_versions(body: InitializeRequest) -> None:
+    """Capture all installed Helm charts and upload their metadata to S3.
+
+    Queries the cluster for every installed Helm release (across all
+    namespaces) plus the configured Helm repositories, then builds a JSON
+    document describing each chart's name, source repository URL, and version
+    and uploads it to ``{run_id}/{trial_id}/helm_versions.json``.
+
+    Chart versions come from ``helm list`` (the ``chart`` field is
+    ``"<name>-<version>"``). Repository URLs are resolved by matching each
+    release's chart name against the entries returned by ``helm repo list``;
+    when the repo cannot be determined the URL is left as ``None``.
+
+    This step is intentionally non-fatal: any failure (missing Helm binary,
+    command error, JSON parsing, or S3 upload) is logged in detail and
+    swallowed so that initialization can continue.
+    """
+    import json
+    from datetime import datetime, timezone
+
+    s3_key = f"{body.run_identifier}/{body.trial_identifier}/helm_versions.json"
+    log = logger.bind(
+        run_identifier=body.run_identifier,
+        trial_identifier=body.trial_identifier,
+        s3_key=s3_key,
+    )
+    log.info("helm_versions_capture_start")
+
+    try:
+        releases = await _run_helm_json(["helm", "list", "--all-namespaces", "-o", "json"])
+        repos = await _run_helm_json(["helm", "repo", "list", "-o", "json"])
+
+        # Map repo name -> url and build a chart-name -> url lookup by probing
+        # each repo's chart index is unnecessary; instead we match the release
+        # chart name against repo names heuristically below.
+        repo_url_by_name = {
+            str(r.get("name", "")): str(r.get("url", "")) for r in (repos or [])
+        }
+
+        charts: list[dict[str, str | None]] = []
+        for release in releases or []:
+            chart_field = str(release.get("chart", ""))
+            # chart field is "<chartName>-<version>"; split on the last hyphen.
+            chart_name, _, version = chart_field.rpartition("-")
+            if not chart_name:
+                chart_name, version = chart_field, ""
+
+            # Resolve the repository URL. Helm's `list` output does not include
+            # the source repo, so we match on the configured GlobeCo repo and
+            # otherwise fall back to any repo whose name is a prefix of the
+            # release name (the common `helm install <name> <repo>/<chart>`
+            # convention leaves the repo unrecorded, so this is best-effort).
+            url: str | None = repo_url_by_name.get(chart_name)
+            if url is None:
+                for repo_name, repo_url in repo_url_by_name.items():
+                    if chart_name in repo_name or repo_name in chart_name:
+                        url = repo_url
+                        break
+
+            charts.append(
+                {
+                    "name": chart_name,
+                    "release": str(release.get("name", "")),
+                    "namespace": str(release.get("namespace", "")),
+                    "url": url,
+                    "version": version,
+                }
+            )
+
+        document = {
+            "runIdentifier": body.run_identifier,
+            "trialIdentifier": body.trial_identifier,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "repositories": [
+                {"name": name, "url": url} for name, url in repo_url_by_name.items()
+            ],
+            "charts": charts,
+        }
+        serialized = json.dumps(document, indent=2, sort_keys=False)
+
+        s3_client = S3Client(bucket=body.s3_bucket)
+        await s3_client.upload_json(key=s3_key, data=serialized.encode("utf-8"))
+
+        log.info("helm_versions_capture_success", chart_count=len(charts))
+    except Exception as exc:
+        # Non-fatal: log full detail and continue with initialization.
+        log.error(
+            "helm_versions_capture_failed",
+            error=str(exc),
+            exception_class=type(exc).__name__,
+        )
+
+
+async def _run_helm_json(cmd: list[str]) -> list[dict]:
+    """Run a Helm command that emits JSON and return the parsed list.
+
+    Args:
+        cmd: The Helm CLI argument vector (e.g. ``["helm", "list", "-o", "json"]``).
+
+    Returns:
+        The parsed JSON list. An empty list is returned when Helm prints
+        nothing (e.g. no releases/repos configured).
+
+    Raises:
+        RuntimeError: If the Helm binary is missing or the command exits
+            non-zero.
+    """
+    import json
+
+    cmd_str = " ".join(cmd)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Helm CLI binary not found. Ensure helm is installed and on PATH."
+        ) from exc
+
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Command '{cmd_str}' failed with exit code {proc.returncode}: "
+            f"{stderr.decode().strip()}"
+        )
+
+    output = stdout.decode().strip()
+    if not output:
+        return []
+
+    parsed = json.loads(output)
+    return parsed if isinstance(parsed, list) else []
 
 
 async def _install_manifests(body: InitializeRequest, config: RunnerConfig) -> list[dict[str, str]]:
