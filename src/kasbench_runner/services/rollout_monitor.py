@@ -127,8 +127,15 @@ class RolloutMonitor:
                     pod_name=pod_name,
                 )
 
-            # Check success
-            if self._is_rollout_complete(status, deployment.spec):
+            # Check success: controller status must be complete AND every pod
+            # belonging to the deployment must be actually healthy.
+            desired_replicas = deployment.spec.get("replicas", 0) or 0
+            if self._is_rollout_complete(status, deployment.spec) and (
+                desired_replicas == 0
+                or await self._all_pods_ready(
+                    deployment_name, namespace, desired_replicas
+                )
+            ):
                 elapsed = time.monotonic() - start
                 logger.info(
                     "rollout_complete",
@@ -140,7 +147,6 @@ class RolloutMonitor:
 
             # Log progress
             ready_replicas = status.get("readyReplicas", 0) or 0
-            desired_replicas = deployment.spec.get("replicas", 0) or 0
             logger.info(
                 "rollout_progress",
                 deployment=deployment_name,
@@ -345,6 +351,97 @@ class RolloutMonitor:
 
         return None
 
+    async def _all_pods_ready(
+        self, workload_name: str, namespace: str, expected_replicas: int
+    ) -> bool:
+        """Check that every pod owned by a workload is actually healthy.
+
+        A pod is considered ready only when its status.conditions contains a
+        "Ready" condition with status "True" AND every entry in
+        status.containerStatuses reports ready == True. This gate is applied in
+        addition to the controller-level replica checks so that a workload whose
+        counters look complete but whose pods are still failing probes (e.g. a
+        new pod that is Running-but-not-Ready or in CrashLoopBackOff) is NOT
+        treated as a successful rollout.
+
+        Queries pods with the label selector app={workload_name}, matching the
+        convention used by _check_pod_conditions.
+
+        Args:
+            workload_name: Name of the deployment or statefulset.
+            namespace: Kubernetes namespace.
+            expected_replicas: Desired replica count for the workload.
+
+        Returns:
+            True if all pods are ready. False if no pods are found while
+            expected_replicas > 0, if any pod is not ready, or if the pod query
+            fails (so the poll loop keeps waiting rather than falsely
+            succeeding).
+        """
+        try:
+            api = await kr8s.asyncio.api()
+            pods = [
+                pod
+                async for pod in api.get(
+                    "pods",
+                    namespace=namespace,
+                    label_selector=f"app={workload_name}",
+                )
+            ]
+        except Exception as exc:
+            logger.warning(
+                "pod_readiness_check_failed",
+                workload=workload_name,
+                namespace=namespace,
+                error=str(exc),
+            )
+            return False
+
+        # No pods for a workload that expects replicas is not "ready"
+        if not pods and expected_replicas > 0:
+            logger.info(
+                "pods_not_ready",
+                workload=workload_name,
+                namespace=namespace,
+                reason="no_pods_found",
+                expected_replicas=expected_replicas,
+            )
+            return False
+
+        for pod in pods:
+            pod_name = pod.name
+
+            # Pod-level Ready condition must be True
+            conditions = pod.status.get("conditions", [])
+            ready_condition = next(
+                (c for c in conditions if c.get("type") == "Ready"), None
+            )
+            if ready_condition is None or ready_condition.get("status") != "True":
+                logger.info(
+                    "pods_not_ready",
+                    workload=workload_name,
+                    namespace=namespace,
+                    pod=pod_name,
+                    reason="ready_condition_not_true",
+                )
+                return False
+
+            # Every container must report ready
+            container_statuses = pod.status.get("containerStatuses", [])
+            for container_status in container_statuses:
+                if not container_status.get("ready", False):
+                    logger.info(
+                        "pods_not_ready",
+                        workload=workload_name,
+                        namespace=namespace,
+                        pod=pod_name,
+                        container=container_status.get("name"),
+                        reason="container_not_ready",
+                    )
+                    return False
+
+        return True
+
     async def _fetch_deployment_with_retry(
         self, deployment_name: str, namespace: str
     ) -> object:
@@ -482,8 +579,15 @@ class RolloutMonitor:
                     pod_name=pod_name,
                 )
 
-            # Check success: readyReplicas == replicas and updatedReplicas == replicas
-            if self._is_statefulset_ready(status, spec):
+            # Check success: controller readiness must hold AND every pod
+            # belonging to the statefulset must be actually healthy.
+            desired_replicas = spec.get("replicas", 0) or 0
+            if self._is_statefulset_ready(status, spec) and (
+                desired_replicas == 0
+                or await self._all_pods_ready(
+                    statefulset_name, namespace, desired_replicas
+                )
+            ):
                 elapsed = time.monotonic() - start
                 logger.info(
                     "statefulset_rollout_complete",
@@ -495,7 +599,6 @@ class RolloutMonitor:
 
             # Log progress
             ready_replicas = status.get("readyReplicas", 0) or 0
-            desired_replicas = spec.get("replicas", 0) or 0
             logger.info(
                 "statefulset_rollout_progress",
                 statefulset=statefulset_name,
