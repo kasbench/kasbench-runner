@@ -350,6 +350,13 @@ COUNTER_METRICS: list[MetricDefinition] = [
         name="kafka_dlq_messages-service_name-topic",
         metric_type="counter",
     ),
+    MetricDefinition(
+        metric="kafka_publish_success_total",
+        description="kafka arrival rate",
+        query='sum(rate(kafka_publish_success_total[__INTERVAL__]))',
+        name="kafka_publish_success_total",
+        metric_type="counter",
+    ),
 ]
 
 
@@ -623,7 +630,7 @@ sum by (node) (
         metric="node_cpu_usage",
         description="average cpu usage by node.",
         query="""
-  avg(1 - rate(node_cpu_seconds_total{mode="idle"}[2m])) by (node)""",
+  avg(1 - rate(node_cpu_seconds_total{mode="idle"}[__INTERVAL__])) by (node)""",
         name="node_cpu_usage",
         metric_type="gauge",
     ),
@@ -633,7 +640,7 @@ sum by (node) (
         query="""
 sum by (node) (
   label_replace(
-    rate(container_cpu_usage_seconds_total{container!="", container!="POD"}[2m]),
+    rate(container_cpu_usage_seconds_total{container!="", container!="POD"}[__INTERVAL__]),
     "node",
     "$1",
     "instance",
@@ -658,7 +665,7 @@ sum by (node) (
       container_cpu_usage_seconds_total{
         container!="",
         container!="POD"
-      }[2m]
+      }[__INTERVAL__]
     ),
     "node",
     "$1",
