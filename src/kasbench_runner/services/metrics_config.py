@@ -550,6 +550,130 @@ GAUGE_METRICS: list[MetricDefinition] = [
         name="kube_deployment_status_replicas_available",
         metric_type="gauge",
     ),
+    # Cluster/node-level resource request and usage ratios
+    MetricDefinition(
+        metric="cluster_pod_requested",
+        description="ratio of running/pending pods to allocatable pods by node.",
+        query="""
+count by (node) (
+  kube_pod_info
+  * on (pod, namespace) group_left()
+  (kube_pod_status_phase{phase=~"Running|Pending"} == 1)
+)
+/
+sum by (node) (kube_node_status_allocatable{resource="pods"})
+""",
+        name="cluster_pod_requested",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="cluster_memory_requested",
+        description="ratio of requested memory to allocatable memory by node.",
+        query="""
+sum by (node) (
+  kube_pod_container_resource_requests{resource="memory"}
+   *on (pod, namespace) group_left(node)
+  (
+    kube_pod_info
+*     on (pod, namespace) group_left()
+    (kube_pod_status_phase{phase=~"Running|Pending"} == 1)
+  )
+)
+/
+sum by (node) (
+  kube_node_status_allocatable{resource="memory"}
+)
+""",
+        name="cluster_memory_requested",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="cluster_cpu_requested",
+        description="ratio of requested cpu to allocatable cpu by node.",
+        query="""
+sum by (node) (
+  kube_pod_container_resource_requests{resource="cpu"}
+   *on (pod, namespace) group_left(node)
+  (
+    kube_pod_info
+*     on (pod, namespace) group_left()
+    (kube_pod_status_phase{phase=~"Running|Pending"} == 1)
+  )
+)
+/
+sum by (node) (
+  kube_node_status_allocatable{resource="cpu"}
+)
+""",
+        name="cluster_cpu_requested",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="cpu_cores_by_node",
+        description="requested cpu cores by node.",
+        query="""sum by (node) (
+  kube_pod_container_resource_requests{resource="cpu"}
+  * on (namespace, pod) group_left(node)
+  kube_pod_info
+)""",
+        name="cpu_cores_by_node",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="node_cpu_usage",
+        description="average cpu usage by node.",
+        query="""
+  avg(1 - rate(node_cpu_seconds_total{mode="idle"}[2m])) by (node)""",
+        name="node_cpu_usage",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="allocatable_cpu_usage_ratio",
+        description="ratio of container cpu usage to allocatable cpu by node.",
+        query="""
+sum by (node) (
+  label_replace(
+    rate(container_cpu_usage_seconds_total{container!="", container!="POD"}[2m]),
+    "node",
+    "$1",
+    "instance",
+    "(.*)"
+  )
+)
+/
+sum by (node) (
+  kube_node_status_allocatable{resource="cpu"}
+)
+""",
+        name="allocatable_cpu_usage_ratio",
+        metric_type="gauge",
+    ),
+    MetricDefinition(
+        metric="cluster_cpu_usage",
+        description="ratio of container cpu usage to allocatable cpu by node.",
+        query="""
+sum by (node) (
+  label_replace(
+    rate(
+      container_cpu_usage_seconds_total{
+        container!="",
+        container!="POD"
+      }[2m]
+    ),
+    "node",
+    "$1",
+    "instance",
+    "(.*)"
+  )
+)
+/
+sum by (node) (
+  kube_node_status_allocatable{resource="cpu"}
+)
+""",
+        name="cluster_cpu_usage",
+        metric_type="gauge",
+    ),
 ]
 
 ALL_METRICS: list[MetricDefinition] = COUNTER_METRICS + GAUGE_METRICS
