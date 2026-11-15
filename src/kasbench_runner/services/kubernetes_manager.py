@@ -166,6 +166,9 @@ class KubernetesManager:
         if autoscaler.lower() == "keda":
             await self._install_keda()
 
+        # Step 14: Install kube-startup-cpu-boost (unconditional)
+        await self._install_kube_startup_cpu_boost()
+
         logger.info("kubernetes_install_completed", node_count=expected_node_count)
 
     async def _init_control_plane(
@@ -1372,5 +1375,86 @@ class KubernetesManager:
                 step="install_keda",
                 node=None,
                 command=wait_command,
+                error_output=str(exc),
+            ) from exc
+
+    async def _install_kube_startup_cpu_boost(self) -> None:
+        """Install kube-startup-cpu-boost via Helm and wait for readiness.
+
+        Adds the kube-startup-cpu-boost Helm repository, updates repos, and
+        installs the chart into the kube-startup-cpu-boost-system namespace
+        with boostOnRestart enabled. Uses ``--wait`` so the step returns only
+        once the release resources are ready.
+
+        Raises:
+            KubernetesError: If Helm repo add/update or chart install fails.
+        """
+        repo_add_command = (
+            "helm repo add kube-startup-cpu-boost"
+            " https://google.github.io/kube-startup-cpu-boost"
+            " && helm repo update"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                repo_add_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_kube_startup_cpu_boost",
+                    node=None,
+                    command=repo_add_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("helm_repo_added", repo="kube-startup-cpu-boost")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_kube_startup_cpu_boost",
+                node=None,
+                command=repo_add_command,
+                error_output=str(exc),
+            ) from exc
+
+        helm_command = (
+            "helm install kube-startup-cpu-boost"
+            " kube-startup-cpu-boost/kube-startup-cpu-boost"
+            " --create-namespace -n kube-startup-cpu-boost-system"
+            " --set controllerManager.manager.env.boostOnRestart=true"
+            " --wait"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                helm_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_kube_startup_cpu_boost",
+                    node=None,
+                    command=helm_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("kube_startup_cpu_boost_installed")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_kube_startup_cpu_boost",
+                node=None,
+                command=helm_command,
                 error_output=str(exc),
             ) from exc
