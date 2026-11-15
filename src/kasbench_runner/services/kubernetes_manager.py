@@ -1428,6 +1428,8 @@ class KubernetesManager:
             " kube-startup-cpu-boost/kube-startup-cpu-boost"
             " --create-namespace -n kube-startup-cpu-boost-system"
             " --set controllerManager.manager.env.boostOnRestart=true"
+            " --set controllerManager.manager.resources.requests.cpu=250m"
+            " --set controllerManager.manager.resources.limits.cpu=500m"
             " --wait"
         )
         try:
