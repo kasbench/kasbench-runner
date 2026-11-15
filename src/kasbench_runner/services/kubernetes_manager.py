@@ -1227,9 +1227,56 @@ class KubernetesManager:
                 error_output=str(exc),
             ) from exc
 
-        # Wait for VPA components to be ready in kube-system
+        # Enable the InPlace feature gate on the VPA updater and admission
+        # controller (required for updateMode: InPlace).
+        # Reference: https://kubernetes.io/docs/concepts/workloads/autoscaling/vertical-pod-autoscale/
+        feature_gate_patch = (
+            '[{"op":"add","path":"/spec/template/spec/containers/0/args/-",'
+            '"value":"--feature-gates=InPlace=true"}]'
+        )
+        feature_gate_command = (
+            f"kubectl patch deployment vpa-updater -n kube-system"
+            f" --type=json -p '{feature_gate_patch}'"
+            f" && kubectl patch deployment vpa-admission-controller -n kube-system"
+            f" --type=json -p '{feature_gate_patch}'"
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash",
+                "-c",
+                feature_gate_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise KubernetesError(
+                    step="install_vpa",
+                    node=None,
+                    command=feature_gate_command,
+                    error_output=stderr.decode().strip(),
+                )
+
+            logger.info("vpa_inplace_feature_gate_enabled")
+        except KubernetesError:
+            raise
+        except Exception as exc:
+            raise KubernetesError(
+                step="install_vpa",
+                node=None,
+                command=feature_gate_command,
+                error_output=str(exc),
+            ) from exc
+
+        # Wait for VPA components to be ready in kube-system. The patched
+        # deployments roll out new pods, so wait for the rollouts to finish.
         wait_command = (
-            "kubectl wait --for=condition=Available"
+            "kubectl rollout status deployment/vpa-updater"
+            " -n kube-system --timeout=300s"
+            " && kubectl rollout status deployment/vpa-admission-controller"
+            " -n kube-system --timeout=300s"
+            " && kubectl wait --for=condition=Available"
             " deployment/vpa-admission-controller"
             " deployment/vpa-recommender"
             " deployment/vpa-updater"
