@@ -1230,15 +1230,25 @@ class KubernetesManager:
         # Enable the InPlace feature gate on the VPA updater and admission
         # controller (required for updateMode: InPlace).
         # Reference: https://kubernetes.io/docs/concepts/workloads/autoscaling/vertical-pod-autoscale/
-        feature_gate_patch = (
+        # The updater manifest defines no args, so a JSON-patch append would
+        # fail; set the args list with a strategic merge patch instead.
+        # --min-replicas=1 lets the updater act on single-replica workloads
+        # (default is 2, which defers in-place updates for them). The
+        # admission controller already has args, so append to them.
+        updater_patch = (
+            '{"spec":{"template":{"spec":{"containers":'
+            '[{"name":"updater","args":'
+            '["--feature-gates=InPlace=true","--min-replicas=1"]}]}}}}'
+        )
+        admission_patch = (
             '[{"op":"add","path":"/spec/template/spec/containers/0/args/-",'
             '"value":"--feature-gates=InPlace=true"}]'
         )
         feature_gate_command = (
             f"kubectl patch deployment vpa-updater -n kube-system"
-            f" --type=json -p '{feature_gate_patch}'"
+            f" --type=strategic -p '{updater_patch}'"
             f" && kubectl patch deployment vpa-admission-controller -n kube-system"
-            f" --type=json -p '{feature_gate_patch}'"
+            f" --type=json -p '{admission_patch}'"
         )
         try:
             proc = await asyncio.create_subprocess_exec(
