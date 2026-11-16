@@ -1238,14 +1238,26 @@ class KubernetesManager:
         updater_patch = (
             '{"spec":{"template":{"spec":{"containers":'
             '[{"name":"updater","args":'
-            '["--feature-gates=InPlace=true","--min-replicas=1"]}]}}}}'
+            '["--feature-gates=InPlace=true","--min-replicas=1",'
+            '"--in-recommendation-bounds-eviction-lifetime-threshold=2m",'
+            '"--updater-interval=15s"]}]}}}}'
         )
         admission_patch = (
             '[{"op":"add","path":"/spec/template/spec/containers/0/args/-",'
             '"value":"--feature-gates=InPlace=true"}]'
         )
+        # The recommender manifest also defines no args, so set them with a
+        # strategic merge patch.
+        recommender_patch = (
+            '{"spec":{"template":{"spec":{"containers":'
+            '[{"name":"recommender","args":'
+            '["--cpu-histogram-decay-half-life=5m",'
+            '"--memory-histogram-decay-half-life=5m"]}]}}}}'
+        )
         feature_gate_command = (
-            f"kubectl patch deployment vpa-updater -n kube-system"
+            f"kubectl patch deployment vpa-recommender -n kube-system"
+            f" --type=strategic -p '{recommender_patch}'"
+            f" && kubectl patch deployment vpa-updater -n kube-system"
             f" --type=strategic -p '{updater_patch}'"
             f" && kubectl patch deployment vpa-admission-controller -n kube-system"
             f" --type=json -p '{admission_patch}'"
@@ -1282,7 +1294,9 @@ class KubernetesManager:
         # Wait for VPA components to be ready in kube-system. The patched
         # deployments roll out new pods, so wait for the rollouts to finish.
         wait_command = (
-            "kubectl rollout status deployment/vpa-updater"
+            "kubectl rollout status deployment/vpa-recommender"
+            " -n kube-system --timeout=300s"
+            " && kubectl rollout status deployment/vpa-updater"
             " -n kube-system --timeout=300s"
             " && kubectl rollout status deployment/vpa-admission-controller"
             " -n kube-system --timeout=300s"
